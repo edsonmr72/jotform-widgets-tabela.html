@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabela Dinâmica - Widget Jotform</title>
+<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 4px;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 13px;
+    color: #222;
+    background: transparent;
+  }
+  .wrap { width: 100%; overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    background: #fff;
+  }
+  th, td {
+    border: 1px solid #000;
+    padding: 0;
+    text-align: center;
+    vertical-align: middle;
+  }
+  th {
+    background: #bfbfbf;
+    font-weight: 700;
+    padding: 6px 4px;
+    font-size: 12.5px;
+    line-height: 1.2;
+  }
+  td input {
+    width: 100%;
+    border: 0;
+    outline: none;
+    padding: 7px 5px;
+    font: inherit;
+    text-align: center;
+    background: transparent;
+  }
+  td input:focus { background: #eef5ff; }
+  th.act, td.act { width: 34px; border: 0; background: transparent; }
+  .del {
+    border: 0; background: transparent; cursor: pointer;
+    color: #c0392b; font-size: 16px; line-height: 1; padding: 4px 6px;
+  }
+  .del[disabled] { opacity: .25; cursor: not-allowed; }
+  .bar { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    border: 1px solid #0a8a4a; background: #0a8a4a; color: #fff;
+    border-radius: 4px; padding: 7px 14px; cursor: pointer;
+    font: inherit; font-weight: 600;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn[disabled] { opacity: .5; cursor: not-allowed; }
+  .info { color: #666; font-size: 12px; }
+  .err { color: #c0392b; font-size: 12px; margin-top: 5px; display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <table id="tbl">
+    <thead><tr id="thead-row"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="bar">
+  <button type="button" class="btn" id="addRow">+ Adicionar linha</button>
+  <span class="info" id="counter"></span>
+</div>
+<div class="err" id="err"></div>
+
+<script>
+(function () {
+  var API = (typeof JFCustomWidget !== "undefined") ? JFCustomWidget : null;
+
+  var cfg = {
+    columns: ["FE", "Customer Reference", "Composition", "% Virgin fiber", "% Recycled fiber"],
+    widths:  [],
+    maxRows: 20,
+    minRows: 1,
+    required: false,
+    headerColor: "#bfbfbf",
+    addLabel: "+ Adicionar linha",
+    allowDelete: true
+  };
+
+  var tbody = document.getElementById("tbody");
+  var headRow = document.getElementById("thead-row");
+  var addBtn = document.getElementById("addRow");
+  var counter = document.getElementById("counter");
+  var errBox = document.getElementById("err");
+
+  // Separador: usa "|" se existir, senão ";", senão ",".
+  // Assim é possível ter cabeçalhos com vírgula, ex.: "Peso, kg | Largura, mm"
+  function split(v) {
+    var s = String(v || "");
+    var sep = s.indexOf("|") > -1 ? "|" : (s.indexOf(";") > -1 ? ";" : ",");
+    return s.split(sep).map(function (x) { return x.trim(); })
+      .filter(function (x) { return x.length; });
+  }
+
+  function readSettings() {
+    if (!API) return;
+    var g = function (k) { try { return API.getWidgetSetting(k); } catch (e) { return null; } };
+    var c = g("columns");        if (c && split(c).length) cfg.columns = split(c);
+    var w = g("columnWidths");   if (w) cfg.widths = split(w);
+    var mx = parseInt(g("maxRows"), 10);  if (!isNaN(mx) && mx > 0) cfg.maxRows = mx;
+    var mn = parseInt(g("initialRows"), 10); if (!isNaN(mn) && mn > 0) cfg.minRows = mn;
+    var req = g("required");     cfg.required = (String(req).toLowerCase() === "yes" || String(req) === "true");
+    var hc = g("headerColor");   if (hc) cfg.headerColor = hc;
+    var al = g("addButtonLabel");if (al) cfg.addLabel = al;
+    var ad = g("allowDelete");   if (ad !== null && ad !== undefined && String(ad) !== "")
+                                   cfg.allowDelete = !(String(ad).toLowerCase() === "no" || String(ad) === "false");
+  }
+
+  function buildHeader() {
+    headRow.innerHTML = "";
+    cfg.columns.forEach(function (name, i) {
+      var th = document.createElement("th");
+      th.textContent = name;
+      th.style.background = cfg.headerColor;
+      if (cfg.widths[i]) th.style.width = /%|px/.test(cfg.widths[i]) ? cfg.widths[i] : cfg.widths[i] + "%";
+      headRow.appendChild(th);
+    });
+    var tha = document.createElement("th");
+    tha.className = "act";
+    headRow.appendChild(tha);
+    addBtn.textContent = cfg.addLabel;
+  }
+
+  function addRow(values) {
+    if (tbody.rows.length >= cfg.maxRows) return;
+    var tr = document.createElement("tr");
+    cfg.columns.forEach(function (name, i) {
+      var td = document.createElement("td");
+      var inp = document.createElement("input");
+      inp.type = "text";
+      inp.setAttribute("data-col", name);
+      inp.placeholder = "";
+      if (values && values[i] != null) inp.value = values[i];
+      inp.addEventListener("input", function () { errBox.style.display = "none"; });
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+    var tda = document.createElement("td");
+    tda.className = "act";
+    if (cfg.allowDelete) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "del"; b.innerHTML = "&times;";
+      b.title = "Remover linha";
+      b.onclick = function () { if (tbody.rows.length > 1) { tr.remove(); refresh(); } };
+      tda.appendChild(b);
+    }
+    tr.appendChild(tda);
+    tbody.appendChild(tr);
+    refresh();
+  }
+
+  function refresh() {
+    var n = tbody.rows.length;
+    addBtn.disabled = n >= cfg.maxRows;
+    counter.textContent = n + " de " + cfg.maxRows + " linha(s)";
+    Array.prototype.forEach.call(tbody.querySelectorAll(".del"), function (b) {
+      b.disabled = (n <= 1);
+    });
+    resize();
+  }
+
+  function resize() {
+    if (!API) return;
+    var h = document.body.scrollHeight + 20;
+    try { API.requestFrameResize({ height: h }); } catch (e) {}
+  }
+
+  function collect() {
+    var rows = [];
+    Array.prototype.forEach.call(tbody.rows, function (tr) {
+      var obj = {}, filled = false;
+      Array.prototype.forEach.call(tr.querySelectorAll("input"), function (inp) {
+        var v = inp.value.trim();
+        obj[inp.getAttribute("data-col")] = v;
+        if (v) filled = true;
+      });
+      if (filled) rows.push(obj);
+    });
+    return rows;
+  }
+
+  function toText(rows) {
+    if (!rows.length) return "";
+    var out = [cfg.columns.join(" | ")];
+    rows.forEach(function (r) {
+      out.push(cfg.columns.map(function (c) { return r[c] || ""; }).join(" | "));
+    });
+    return out.join("\n");
+  }
+
+  addBtn.addEventListener("click", function () { addRow(); });
+
+  function init() {
+    readSettings();
+    buildHeader();
+    tbody.innerHTML = "";
+    for (var i = 0; i < cfg.minRows; i++) addRow();
+    resize();
+  }
+
+  if (API) {
+    API.subscribe("ready", function () {
+      init();
+      // restaura valores salvos (edição / prefill)
+      try {
+        var existing = API.getWidgetSetting("defaultValue") || "";
+        if (existing) {
+          var data = JSON.parse(existing);
+          if (Array.isArray(data) && data.length) {
+            tbody.innerHTML = "";
+            data.forEach(function (r) {
+              addRow(cfg.columns.map(function (c) { return r[c] || ""; }));
+            });
+          }
+        }
+      } catch (e) {}
+      resize();
+    });
+
+    API.subscribe("submit", function () {
+      var rows = collect();
+      if (cfg.required && rows.length === 0) {
+        errBox.textContent = "Preencha ao menos uma linha da tabela.";
+        errBox.style.display = "block";
+        resize();
+        API.sendSubmit({ valid: false, value: "" });
+        return;
+      }
+      API.sendSubmit({
+        valid: true,
+        value: JSON.stringify(rows),
+        text: toText(rows)
+      });
+    });
+  } else {
+    init(); // preview fora do Jotform
+  }
+
+  window.addEventListener("resize", resize);
+})();
+</script>
+</body>
+</html>
