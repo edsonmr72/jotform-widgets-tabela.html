@@ -1,259 +1,509 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tabela Dinâmica - Widget Jotform</title>
-<script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
-<style>
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 4px;
-    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
-    font-size: 13px;
-    color: #222;
-    background: transparent;
-  }
-  .wrap { width: 100%; overflow-x: auto; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-    background: #fff;
-  }
-  th, td {
-    border: 1px solid #000;
-    padding: 0;
-    text-align: center;
-    vertical-align: middle;
-  }
-  th {
-    background: #bfbfbf;
-    font-weight: 700;
-    padding: 6px 4px;
-    font-size: 12.5px;
-    line-height: 1.2;
-  }
-  td input {
-    width: 100%;
-    border: 0;
-    outline: none;
-    padding: 7px 5px;
-    font: inherit;
-    text-align: center;
-    background: transparent;
-  }
-  td input:focus { background: #eef5ff; }
-  th.act, td.act { width: 34px; border: 0; background: transparent; }
-  .del {
-    border: 0; background: transparent; cursor: pointer;
-    color: #c0392b; font-size: 16px; line-height: 1; padding: 4px 6px;
-  }
-  .del[disabled] { opacity: .25; cursor: not-allowed; }
-  .bar { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .btn {
-    border: 1px solid #0a8a4a; background: #0a8a4a; color: #fff;
-    border-radius: 4px; padding: 7px 14px; cursor: pointer;
-    font: inherit; font-weight: 600;
-  }
-  .btn:hover { filter: brightness(1.08); }
-  .btn[disabled] { opacity: .5; cursor: not-allowed; }
-  .info { color: #666; font-size: 12px; }
-  .err { color: #c0392b; font-size: 12px; margin-top: 5px; display: none; }
-</style>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Widget – Tabela de Produtos</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #f5f6f8;
+      --surface:      #ffffff;
+      --border:       #e2e5ec;
+      --border-2:     #c8cdd8;
+      --text:         #000000;
+      --muted:        #6b7585;
+      --accent:       #1a56db;
+      --accent-bg:    #eef3fd;
+      --accent-dim:   #c7d9f9;
+      --green:        #15803d;
+      --green-bg:     #f0fdf4;
+      --green-border: #bbf7d0;
+      --red:          #b91c1c;
+      --red-bg:       #fef2f2;
+      --red-border:   #fecaca;
+      --head-bg:      #666666;
+      --row-alt:      #f8faff;
+      --radius:       10px;
+      --shadow:       0 2px 8px rgba(0,0,0,.07);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      font-size: 13px;
+    }
+
+    /* ── Input de arquivo: totalmente oculto, fora do fluxo visual ── */
+    #fileIn {
+      display: none;
+    }
+
+    /* ── Drop zone: sem input sobreposto ── */
+    .drop-zone {
+      background: var(--surface);
+      border: 2px dashed var(--border-2);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .18s, background .18s;
+      user-select: none;
+    }
+    .drop-zone:hover {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+    .drop-zone.over {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+      border-style: solid;
+    }
+    .drop-zone.hidden { display: none; }
+
+    .dz-icon  { font-size: 36px; margin-bottom: 8px; pointer-events: none; }
+    .dz-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; pointer-events: none; color: #000000; }
+    .dz-sub   { color: var(--muted); font-size: 12px; pointer-events: none; }
+    .dz-sub code {
+      background: var(--border); padding: 1px 6px; border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    }
+
+    /* ── Status ── */
+    .status {
+      display: none; align-items: center; gap: 8px;
+      margin-top: 10px; padding: 9px 14px; border-radius: 8px;
+      font-size: 13px; font-weight: 500;
+    }
+    .status.ok  { display: flex; background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+    .status.err { display: flex; background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
+
+    /* ── Meta bar ── */
+    .meta-bar {
+      display: none; align-items: center; justify-content: space-between;
+      margin-top: 12px; gap: 8px; flex-wrap: wrap;
+    }
+    .meta-bar.on { display: flex; }
+    .chips { display: none; gap: 6px; flex-wrap: wrap; }
+    .chips.on { display: flex; }
+    .chip {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #000000;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .chip b { color: var(--accent); }
+
+    /* ── Botões ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 7px 14px; border-radius: 7px; border: none;
+      font: 600 12px/1 'Inter', sans-serif; cursor: pointer;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:hover  { opacity: .85; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn-ghost   { background: transparent; color: #000000; border: 1px solid var(--border); }
+    .btn-primary { background: var(--accent); color: #fff; }
+
+    /* ── Tabela ── */
+    .tbl-wrap {
+      display: none; margin-top: 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; box-shadow: var(--shadow);
+    }
+    .tbl-wrap.on { display: block; }
+    .tbl-scroll  { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+    .tbl-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+    .tbl-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      background: var(--head-bg); color: #fff;
+      padding: 9px 14px; text-align: left; font-weight: 600;
+      font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+      white-space: nowrap; position: sticky; top: 0; z-index: 2;
+      border-right: 1px solid rgba(255,255,255,.15);
+    }
+    thead th:last-child { border-right: none; }
+    tbody tr:nth-child(odd)  { background: #ffffff; }
+    tbody tr:nth-child(even) { background: #f8faff; }
+    tbody tr:hover { background: var(--accent-bg) !important; }
+    tbody td {
+      padding: 8px 14px; border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border); vertical-align: middle; font-size: 11.5px;
+      color: #000000;
+    }
+    tbody td:last-child { border-right: none; }
+    tbody tr:last-child td { border-bottom: none; }
+    td.col-fe   { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #000000; background: #ffffff !important; white-space: nowrap; }
+    td.col-ref  { color: #000000; }
+    td.col-comp { font-family: 'JetBrains Mono', monospace; color: #000000; }
+
+    /* ── Barra de confirmação ── */
+    .action-row {
+      display: none; align-items: center; justify-content: space-between;
+      gap: 10px; margin-top: 12px; flex-wrap: wrap;
+      background: var(--accent-bg); border: 1px solid var(--accent-dim);
+      border-radius: 8px; padding: 10px 14px;
+    }
+    .action-row.on { display: flex; }
+
+    /* ── Mensagem de sucesso ── */
+    .sent-box {
+      display: none; align-items: center; gap: 8px; margin-top: 12px;
+      padding: 10px 14px; background: var(--green-bg);
+      border: 1px solid var(--green-border); border-radius: 8px;
+      font-size: 13px; color: var(--green); font-weight: 600;
+    }
+    .sent-box.on { display: flex; }
+  </style>
 </head>
 <body>
 
-<div class="wrap">
-  <table id="tbl">
-    <thead><tr id="thead-row"></tr></thead>
-    <tbody id="tbody"></tbody>
-  </table>
+<!-- Input fora da drop zone, totalmente invisível -->
+<input type="file" id="fileIn" accept=".xlsx,.xls,.csv"/>
+
+<!-- Drop zone sem nenhum elemento filho que intercepte eventos -->
+<div class="drop-zone" id="dz">
+  <div class="dz-icon">📊</div>
+  <div class="dz-title">Arraste a tabela de produtos aqui</div>
+  <div class="dz-sub">ou clique para selecionar &nbsp;<code>.xlsx</code>&nbsp;<code>.xls</code>&nbsp;<code>.csv</code></div>
 </div>
 
-<div class="bar">
-  <button type="button" class="btn" id="addRow">+ Adicionar linha</button>
-  <span class="info" id="counter"></span>
+<div class="status" id="status"></div>
+
+<div class="meta-bar" id="metaBar">
+  <div class="chips" id="chips"></div>
+  <div style="display:flex;gap:6px;">
+    <button class="btn btn-ghost" id="btnReset">↩ Novo arquivo</button>
+  </div>
 </div>
-<div class="err" id="err"></div>
+
+<div class="tbl-wrap" id="tblWrap">
+  <div class="tbl-scroll">
+    <table>
+      <thead><tr>
+        <th>FE / Product</th>
+        <th>Referência do Cliente / Customer Reference</th>
+        <th>Composição / Composition</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="action-row" id="actionRow">
+  <span style="font-size:13px;color:var(--accent);font-weight:500;">✅ Tabela pronta — confirme para inserir no formulário.</span>
+  <button class="btn btn-primary" id="btnConfirm">Inserir no formulário →</button>
+</div>
+
+<div class="sent-box" id="sentBox">
+  ✔ Tabela inserida com sucesso no formulário!
+</div>
 
 <script>
-(function () {
-  var API = (typeof JFCustomWidget !== "undefined") ? JFCustomWidget : null;
-
-  var cfg = {
-    columns: ["FE", "Customer Reference", "Composition", "% Virgin fiber", "% Recycled fiber"],
-    widths:  [],
-    maxRows: 20,
-    minRows: 1,
-    required: false,
-    headerColor: "#bfbfbf",
-    addLabel: "+ Adicionar linha",
-    allowDelete: true
+// ── JotForm Custom Widget API ─────────────────────────────────────────────────
+(function(){
+  var s = document.createElement('script');
+  s.src = 'https://js.jotform.com/JFCustomWidget.js';
+  s.onload = function(){
+    if(typeof JFCustomWidget === 'undefined') return;
+    JFCustomWidget.subscribe('ready', function(){});
+    JFCustomWidget.subscribe('submit', function(){
+      JFCustomWidget.sendSubmit({ value: currentValue || '', valid: true });
+    });
   };
-
-  var tbody = document.getElementById("tbody");
-  var headRow = document.getElementById("thead-row");
-  var addBtn = document.getElementById("addRow");
-  var counter = document.getElementById("counter");
-  var errBox = document.getElementById("err");
-
-  // Separador: usa "|" se existir, senão ";", senão ",".
-  // Assim é possível ter cabeçalhos com vírgula, ex.: "Peso, kg | Largura, mm"
-  function split(v) {
-    var s = String(v || "");
-    var sep = s.indexOf("|") > -1 ? "|" : (s.indexOf(";") > -1 ? ";" : ",");
-    return s.split(sep).map(function (x) { return x.trim(); })
-      .filter(function (x) { return x.length; });
-  }
-
-  function readSettings() {
-    if (!API) return;
-    var g = function (k) { try { return API.getWidgetSetting(k); } catch (e) { return null; } };
-    var c = g("columns");        if (c && split(c).length) cfg.columns = split(c);
-    var w = g("columnWidths");   if (w) cfg.widths = split(w);
-    var mx = parseInt(g("maxRows"), 10);  if (!isNaN(mx) && mx > 0) cfg.maxRows = mx;
-    var mn = parseInt(g("initialRows"), 10); if (!isNaN(mn) && mn > 0) cfg.minRows = mn;
-    var req = g("required");     cfg.required = (String(req).toLowerCase() === "yes" || String(req) === "true");
-    var hc = g("headerColor");   if (hc) cfg.headerColor = hc;
-    var al = g("addButtonLabel");if (al) cfg.addLabel = al;
-    var ad = g("allowDelete");   if (ad !== null && ad !== undefined && String(ad) !== "")
-                                   cfg.allowDelete = !(String(ad).toLowerCase() === "no" || String(ad) === "false");
-  }
-
-  function buildHeader() {
-    headRow.innerHTML = "";
-    cfg.columns.forEach(function (name, i) {
-      var th = document.createElement("th");
-      th.textContent = name;
-      th.style.background = cfg.headerColor;
-      if (cfg.widths[i]) th.style.width = /%|px/.test(cfg.widths[i]) ? cfg.widths[i] : cfg.widths[i] + "%";
-      headRow.appendChild(th);
-    });
-    var tha = document.createElement("th");
-    tha.className = "act";
-    headRow.appendChild(tha);
-    addBtn.textContent = cfg.addLabel;
-  }
-
-  function addRow(values) {
-    if (tbody.rows.length >= cfg.maxRows) return;
-    var tr = document.createElement("tr");
-    cfg.columns.forEach(function (name, i) {
-      var td = document.createElement("td");
-      var inp = document.createElement("input");
-      inp.type = "text";
-      inp.setAttribute("data-col", name);
-      inp.placeholder = "";
-      if (values && values[i] != null) inp.value = values[i];
-      inp.addEventListener("input", function () { errBox.style.display = "none"; });
-      td.appendChild(inp);
-      tr.appendChild(td);
-    });
-    var tda = document.createElement("td");
-    tda.className = "act";
-    if (cfg.allowDelete) {
-      var b = document.createElement("button");
-      b.type = "button"; b.className = "del"; b.innerHTML = "&times;";
-      b.title = "Remover linha";
-      b.onclick = function () { if (tbody.rows.length > 1) { tr.remove(); refresh(); } };
-      tda.appendChild(b);
-    }
-    tr.appendChild(tda);
-    tbody.appendChild(tr);
-    refresh();
-  }
-
-  function refresh() {
-    var n = tbody.rows.length;
-    addBtn.disabled = n >= cfg.maxRows;
-    counter.textContent = n + " de " + cfg.maxRows + " linha(s)";
-    Array.prototype.forEach.call(tbody.querySelectorAll(".del"), function (b) {
-      b.disabled = (n <= 1);
-    });
-    resize();
-  }
-
-  function resize() {
-    if (!API) return;
-    var h = document.body.scrollHeight + 20;
-    try { API.requestFrameResize({ height: h }); } catch (e) {}
-  }
-
-  function collect() {
-    var rows = [];
-    Array.prototype.forEach.call(tbody.rows, function (tr) {
-      var obj = {}, filled = false;
-      Array.prototype.forEach.call(tr.querySelectorAll("input"), function (inp) {
-        var v = inp.value.trim();
-        obj[inp.getAttribute("data-col")] = v;
-        if (v) filled = true;
-      });
-      if (filled) rows.push(obj);
-    });
-    return rows;
-  }
-
-  function toText(rows) {
-    if (!rows.length) return "";
-    var out = [cfg.columns.join(" | ")];
-    rows.forEach(function (r) {
-      out.push(cfg.columns.map(function (c) { return r[c] || ""; }).join(" | "));
-    });
-    return out.join("\n");
-  }
-
-  addBtn.addEventListener("click", function () { addRow(); });
-
-  function init() {
-    readSettings();
-    buildHeader();
-    tbody.innerHTML = "";
-    for (var i = 0; i < cfg.minRows; i++) addRow();
-    resize();
-  }
-
-  if (API) {
-    API.subscribe("ready", function () {
-      init();
-      // restaura valores salvos (edição / prefill)
-      try {
-        var existing = API.getWidgetSetting("defaultValue") || "";
-        if (existing) {
-          var data = JSON.parse(existing);
-          if (Array.isArray(data) && data.length) {
-            tbody.innerHTML = "";
-            data.forEach(function (r) {
-              addRow(cfg.columns.map(function (c) { return r[c] || ""; }));
-            });
-          }
-        }
-      } catch (e) {}
-      resize();
-    });
-
-    API.subscribe("submit", function () {
-      var rows = collect();
-      if (cfg.required && rows.length === 0) {
-        errBox.textContent = "Preencha ao menos uma linha da tabela.";
-        errBox.style.display = "block";
-        resize();
-        API.sendSubmit({ valid: false, value: "" });
-        return;
-      }
-      API.sendSubmit({
-        valid: true,
-        value: JSON.stringify(rows),
-        text: toText(rows)
-      });
-    });
-  } else {
-    init(); // preview fora do Jotform
-  }
-
-  window.addEventListener("resize", resize);
+  document.head.appendChild(s);
 })();
+
+window.addEventListener('message', function(e){
+  try {
+    var msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+    if(msg && msg.type === 'form-submit' && currentValue){
+      e.source.postMessage(JSON.stringify({ type: 'widget-data', value: currentValue }), '*');
+    }
+  } catch(err){}
+});
+
+// ── Estado ────────────────────────────────────────────────────────────────────
+var grouped      = [];
+var currentValue = '';
+
+// ── Timers para auto-ocultar mensagens ────────────────────────────────────────
+var statusTimer  = null;
+var sentBoxTimer = null;
+var chipsTimer   = null;
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+var dz         = document.getElementById('dz');
+var fileIn     = document.getElementById('fileIn');
+var statusEl   = document.getElementById('status');
+var metaBar    = document.getElementById('metaBar');
+var chipsEl    = document.getElementById('chips');
+var tblWrap    = document.getElementById('tblWrap');
+var tbody      = document.getElementById('tbody');
+var actionRow  = document.getElementById('actionRow');
+var sentBox    = document.getElementById('sentBox');
+var btnReset   = document.getElementById('btnReset');
+var btnConfirm = document.getElementById('btnConfirm');
+
+// ── Clique na drop zone → abre o seletor de arquivo ──────────────────────────
+dz.addEventListener('click', function(){
+  fileIn.value = ''; // reset para permitir reselecionar o mesmo arquivo
+  fileIn.click();
+});
+
+// ── Drag & Drop ───────────────────────────────────────────────────────────────
+dz.addEventListener('dragenter', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  dz.classList.add('over');
+});
+dz.addEventListener('dragover', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  dz.classList.add('over');
+});
+dz.addEventListener('dragleave', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  // Só remove o destaque se o cursor saiu da drop zone de verdade
+  var rect = dz.getBoundingClientRect();
+  if(e.clientX < rect.left || e.clientX > rect.right ||
+     e.clientY < rect.top  || e.clientY > rect.bottom){
+    dz.classList.remove('over');
+  }
+});
+dz.addEventListener('drop', function(e){
+  e.preventDefault();
+  e.stopPropagation();
+  dz.classList.remove('over');
+  var files = e.dataTransfer.files;
+  if(files && files[0]) handleFile(files[0]);
+});
+
+// ── Seleção via input ─────────────────────────────────────────────────────────
+fileIn.addEventListener('change', function(){
+  if(fileIn.files && fileIn.files[0]) handleFile(fileIn.files[0]);
+});
+
+// ── Despachante de arquivo ────────────────────────────────────────────────────
+function handleFile(file){
+  var ext = file.name.split('.').pop().toLowerCase();
+  if(ext === 'xlsx' || ext === 'xls') parseXLSX(file);
+  else if(ext === 'csv')              parseCSV(file);
+  else setStatus('err', '⚠ Formato inválido. Use <strong>.xlsx</strong> ou <strong>.csv</strong>');
+}
+
+function parseXLSX(file){
+  var reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      var wb   = XLSX.read(e.target.result, { type: 'array' });
+      var ws   = wb.Sheets[wb.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      processRows(rows, file.name);
+    } catch(err){ setStatus('err', '⚠ Erro ao ler: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseCSV(file){
+  Papa.parse(file, {
+    skipEmptyLines: true,
+    complete: function(r){ processRows(r.data, file.name); },
+    error:    function(e){ setStatus('err', '⚠ Erro: ' + e.message); }
+  });
+}
+
+// ── Processamento ─────────────────────────────────────────────────────────────
+function processRows(rows, filename){
+  if(!rows || rows.length < 2){ setStatus('err', '⚠ Arquivo sem dados.'); return; }
+
+  var header = rows[0].map(function(h){ return String(h || '').trim().toLowerCase(); });
+  var iFE   = colIdx(header, ['fe','nfe','número fe']);
+  var iRef  = colIdx(header, ['referência do cliente','referencia do cliente','ref cliente','referência','referencia']);
+  var iComp = colIdx(header, ['composição','composicao','comp','composition']);
+  if(iFE   < 0) iFE   = 0;
+  if(iRef  < 0) iRef  = 1;
+  if(iComp < 0) iComp = 2;
+
+  var map = [], keyIndex = {};
+  rows.slice(1).forEach(function(row){
+    var fe   = String(row[iFE]   || '').trim();
+    var ref  = String(row[iRef]  || '').trim();
+    var comp = String(row[iComp] || '').trim();
+    if(!fe && !ref && !comp) return;
+    var key = fe + '|||' + ref;
+    if(keyIndex[key] === undefined){ keyIndex[key] = map.length; map.push({ fe: fe, ref: ref, comps: [] }); }
+    if(comp && !map[keyIndex[key]].comps.includes(comp)) map[keyIndex[key]].comps.push(comp);
+  });
+
+  if(!map.length){ setStatus('err', '⚠ Nenhum dado encontrado.'); return; }
+
+  grouped = map;
+  renderPreview();
+
+  var total = map.reduce(function(s, r){ return s + r.comps.length; }, 0);
+
+  // Exibe status de carregamento e oculta após 3 segundos
+  setStatus('ok', '✓ <strong>' + filename + '</strong> carregado com sucesso.');
+  if(statusTimer) clearTimeout(statusTimer);
+  statusTimer = setTimeout(function(){
+    statusEl.className = 'status';
+    statusEl.innerHTML = '';
+  }, 3000);
+
+  chipsEl.innerHTML =
+    '<span class="chip"><b>' + map.length + '</b>&nbsp;produto(s)</span>' +
+    '<span class="chip"><b>' + total + '</b>&nbsp;composição(ões)</span>';
+
+  dz.classList.add('hidden');
+  metaBar.classList.add('on');
+  chipsEl.classList.add('on');
+  
+  // Oculta APENAS os chips após 5 segundos, mantém a metaBar (onde está o botão Novo Arquivo)
+  if(chipsTimer) clearTimeout(chipsTimer);
+  chipsTimer = setTimeout(function(){
+    chipsEl.classList.remove('on');
+  }, 5000);
+
+  tblWrap.classList.add('on');
+  actionRow.classList.add('on');
+  sentBox.classList.remove('on');
+  currentValue = '';
+}
+
+function colIdx(header, candidates){
+  for(var i = 0; i < header.length; i++)
+    if(candidates.indexOf(header[i]) > -1) return i;
+  return -1;
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
+function renderPreview(){
+  tbody.innerHTML = '';
+  grouped.forEach(function(item){
+    var comps = item.comps.length ? item.comps : ['—'];
+    comps.forEach(function(comp, ci){
+      var tr = document.createElement('tr');
+      if(ci === 0){
+        tr.appendChild(makeTD(item.fe,  comps.length, 'col-fe'));
+        tr.appendChild(makeTD(item.ref, comps.length, 'col-ref'));
+      }
+      var td = document.createElement('td');
+      td.className   = 'col-comp';
+      td.textContent = comp;
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function makeTD(text, span, cls){
+  var td = document.createElement('td');
+  td.className   = cls;
+  td.textContent = text;
+  td.rowSpan     = span;
+  return td;
+}
+
+// ── Tabela HTML para o JotForm ────────────────────────────────────────────────
+function buildHTMLTable(){
+  var TH  = 'background:#666666;color:#fff;padding:8px 12px;text-align:left;font-weight:bold;border:1px solid #444444;font-size:10pt;';
+  var TFE = 'padding:7px 12px;border:1px solid #d1d5db;background:#ffffff;font-weight:bold;color:#000000;vertical-align:middle;font-size:10pt;white-space:nowrap;';
+  var TRF = 'padding:7px 12px;border:1px solid #d1d5db;background:#ffffff;color:#000000;vertical-align:middle;font-size:10pt;';
+  var TC1 = 'padding:7px 12px;border:1px solid #d1d5db;font-family:"Courier New",monospace;font-size:10pt;background:#ffffff;color:#000000;';
+  var TC2 = 'padding:7px 12px;border:1px solid #d1d5db;font-family:"Courier New",monospace;font-size:10pt;background:#f8faff;color:#000000;';
+
+  var h = '<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;">';
+  h += '<thead><tr>';
+  h += '<th style="' + TH + '">FE / Product</th>';
+  h += '<th style="' + TH + '">Referência do Cliente / Customer Reference</th>';
+  h += '<th style="' + TH + '">Composição / Composition</th>';
+  h += '</tr></thead><tbody>';
+
+  var p = 0;
+  grouped.forEach(function(item){
+    var comps = item.comps.length ? item.comps : ['—'];
+    comps.forEach(function(comp, ci){
+      h += '<tr>';
+      if(ci === 0){
+        h += '<td rowspan="' + comps.length + '" style="' + TFE + '">' + esc(item.fe)  + '</td>';
+        h += '<td rowspan="' + comps.length + '" style="' + TRF + '">' + esc(item.ref) + '</td>';
+      }
+      h += '<td style="' + (p % 2 === 0 ? TC1 : TC2) + '">' + esc(comp) + '</td>';
+      h += '</tr>';
+      if(ci === 0) p++;
+    });
+  });
+
+  h += '</tbody></table>';
+  return h;
+}
+
+function esc(v){
+  return String(v || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Confirmar e enviar ao JotForm ─────────────────────────────────────────────
+btnConfirm.addEventListener('click', function(){
+  currentValue = buildHTMLTable();
+
+  if(typeof JFCustomWidget !== 'undefined'){
+    JFCustomWidget.sendData({ value: currentValue });
+  }
+  try {
+    window.parent.postMessage(JSON.stringify({ type: 'widgetData', value: currentValue }), '*');
+  } catch(e){}
+
+  actionRow.classList.remove('on');
+  metaBar.classList.remove('on'); // Oculta o botão Novo Arquivo agora
+
+  // Exibe mensagem de sucesso e oculta após 3 segundos
+  sentBox.classList.add('on');
+  if(sentBoxTimer) clearTimeout(sentBoxTimer);
+  sentBoxTimer = setTimeout(function(){
+    sentBox.classList.remove('on');
+  }, 3000);
+});
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+btnReset.addEventListener('click', function(){
+  grouped      = [];
+  currentValue = '';
+  fileIn.value = '';
+  tbody.innerHTML    = '';
+  statusEl.className = 'status';
+  statusEl.innerHTML = '';
+  if(statusTimer)  clearTimeout(statusTimer);
+  if(sentBoxTimer) clearTimeout(sentBoxTimer);
+  if(chipsTimer)   clearTimeout(chipsTimer);
+  dz.classList.remove('hidden');
+  metaBar.classList.remove('on');
+  chipsEl.classList.remove('on');
+  tblWrap.classList.remove('on');
+  actionRow.classList.remove('on');
+  sentBox.classList.remove('on');
+  if(typeof JFCustomWidget !== 'undefined') JFCustomWidget.sendData({ value: '' });
+});
+
+// ── Helper status ─────────────────────────────────────────────────────────────
+function setStatus(type, html){
+  statusEl.className = 'status ' + type;
+  statusEl.innerHTML = html;
+}
 </script>
 </body>
 </html>
