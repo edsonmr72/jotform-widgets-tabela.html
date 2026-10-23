@@ -1,16 +1,37 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Widget – Tabela de Produtos</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Widget – Tabela de Produtos (Imagem)</title>
 
+  <!--
+  =====================================================================
+  ETAPA 0 — DEPENDÊNCIAS
+  ---------------------------------------------------------------------
+  - SheetJS (xlsx)     : lê arquivos .xlsx e .xls no navegador.
+  - PapaParse          : lê arquivos .csv no navegador.
+  - html2canvas        : converte a tabela HTML em imagem (canvas → PNG).
+  - JotFormCustomWidget: API oficial de comunicação widget ↔ formulário
+                         (eventos ready/submit, sendData, sendSubmit,
+                         requestFrameResize).
+  Observação: a planilha é processada SOMENTE no navegador.
+  Nenhum arquivo Excel/CSV é enviado ao Jotform — apenas a imagem PNG.
+  =====================================================================
+  -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
+    /* =================================================================
+       ETAPA 1 — ESTILOS
+       -----------------------------------------------------------------
+       Mantém o visual original do widget. A tabela de CAPTURA
+       (.capture-stage) usa estilos próprios, sem rolagem, sem cabeçalho
+       "sticky" e com fundo branco, para gerar uma imagem limpa no PDF.
+       ================================================================= */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -30,25 +51,25 @@
       --red-bg:       #fef2f2;
       --red-border:   #fecaca;
       --head-bg:      #666666;
-      --row-alt:      #f8faff;
       --radius:       10px;
       --shadow:       0 2px 8px rgba(0,0,0,.07);
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: Arial, Helvetica, sans-serif;
       background: var(--bg);
       color: var(--text);
       padding: 16px;
       font-size: 13px;
     }
 
-    /* ── Input de arquivo: totalmente oculto, fora do fluxo visual ── */
-    #fileIn {
-      display: none;
-    }
+    /* Contêiner usado para medir a altura e redimensionar o iframe */
+    #widgetContent { width: 100%; }
 
-    /* ── Drop zone: sem input sobreposto ── */
+    /* Input de arquivo oculto (acionado pela drop zone) */
+    #fileIn { display: none; }
+
+    /* Drop zone */
     .drop-zone {
       background: var(--surface);
       border: 2px dashed var(--border-2);
@@ -59,96 +80,84 @@
       transition: border-color .18s, background .18s;
       user-select: none;
     }
-    .drop-zone:hover {
-      border-color: var(--accent);
-      background: var(--accent-bg);
-    }
-    .drop-zone.over {
-      border-color: var(--accent);
-      background: var(--accent-bg);
-      border-style: solid;
-    }
-    .drop-zone.hidden { display: none; }
-
+    .drop-zone:hover,
+    .drop-zone:focus-visible { border-color: var(--accent); background: var(--accent-bg); outline: none; }
+    .drop-zone.over { border-color: var(--accent); background: var(--accent-bg); border-style: solid; }
     .dz-icon  { font-size: 36px; margin-bottom: 8px; pointer-events: none; }
-    .dz-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; pointer-events: none; color: #000000; }
+    .dz-title { font-weight: 700; font-size: 14px; margin-bottom: 3px; pointer-events: none; }
     .dz-sub   { color: var(--muted); font-size: 12px; pointer-events: none; }
     .dz-sub code {
       background: var(--border); padding: 1px 6px; border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      font-family: "Courier New", monospace; font-size: 11px;
     }
 
-    /* ── Status ── */
+    /* Utilitário */
+    .hidden { display: none !important; }
+
+    /* Mensagens de status */
     .status {
       display: none; align-items: center; gap: 8px;
       margin-top: 10px; padding: 9px 14px; border-radius: 8px;
-      font-size: 13px; font-weight: 500;
+      font-size: 13px; font-weight: 600;
     }
-    .status.ok  { display: flex; background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
-    .status.err { display: flex; background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
+    .status.ok   { display: flex; background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+    .status.err  { display: flex; background: var(--red-bg);   color: var(--red);   border: 1px solid var(--red-border); }
+    .status.info { display: flex; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-dim); }
 
-    /* ── Meta bar ── */
+    /* Barra de informações (contadores + novo arquivo) */
     .meta-bar {
       display: none; align-items: center; justify-content: space-between;
       margin-top: 12px; gap: 8px; flex-wrap: wrap;
     }
     .meta-bar.on { display: flex; }
-    .chips { display: none; gap: 6px; flex-wrap: wrap; }
-    .chips.on { display: flex; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
     .chip {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #000000;
-      font-family: 'JetBrains Mono', monospace;
+      border-radius: 20px; padding: 3px 10px; font-size: 11px;
+      font-family: "Courier New", monospace;
     }
     .chip b { color: var(--accent); }
 
-    /* ── Botões ── */
+    /* Botões */
     .btn {
       display: inline-flex; align-items: center; gap: 5px;
-      padding: 7px 14px; border-radius: 7px; border: none;
-      font: 600 12px/1 'Inter', sans-serif; cursor: pointer;
+      padding: 8px 14px; border-radius: 7px; border: none;
+      font: 700 12px/1 Arial, sans-serif; cursor: pointer;
       transition: opacity .15s, transform .1s;
     }
-    .btn:hover  { opacity: .85; transform: translateY(-1px); }
-    .btn:active { transform: translateY(0); }
-    .btn-ghost   { background: transparent; color: #000000; border: 1px solid var(--border); }
+    .btn:hover:not(:disabled)  { opacity: .85; transform: translateY(-1px); }
+    .btn:disabled { opacity: .6; cursor: wait; }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .btn-ghost   { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
     .btn-primary { background: var(--accent); color: #fff; }
 
-    /* ── Tabela ── */
+    /* Tabela de PRÉ-VISUALIZAÇÃO (com rolagem) */
     .tbl-wrap {
       display: none; margin-top: 12px;
       border: 1px solid var(--border); border-radius: var(--radius);
-      overflow: hidden; box-shadow: var(--shadow);
+      overflow: hidden; box-shadow: var(--shadow); background: #fff;
     }
     .tbl-wrap.on { display: block; }
-    .tbl-scroll  { overflow-x: auto; max-height: 320px; overflow-y: auto; }
-    .tbl-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
-    .tbl-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    .tbl-scroll { overflow: auto; max-height: 320px; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    thead th {
+    .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .preview-table thead th {
       background: var(--head-bg); color: #fff;
-      padding: 9px 14px; text-align: left; font-weight: 600;
+      padding: 9px 14px; text-align: left; font-weight: 700;
       font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
       white-space: nowrap; position: sticky; top: 0; z-index: 2;
       border-right: 1px solid rgba(255,255,255,.15);
     }
-    thead th:last-child { border-right: none; }
-    tbody tr:nth-child(odd)  { background: #ffffff; }
-    tbody tr:nth-child(even) { background: #f8faff; }
-    tbody tr:hover { background: var(--accent-bg) !important; }
-    tbody td {
+    .preview-table tbody td {
       padding: 8px 14px; border-bottom: 1px solid var(--border);
-      border-right: 1px solid var(--border); vertical-align: middle; font-size: 11.5px;
-      color: #000000;
+      border-right: 1px solid var(--border); vertical-align: middle;
+      font-size: 11.5px; color: #000;
     }
-    tbody td:last-child { border-right: none; }
-    tbody tr:last-child td { border-bottom: none; }
-    td.col-fe   { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: #000000; background: #ffffff !important; white-space: nowrap; }
-    td.col-ref  { color: #000000; }
-    td.col-comp { font-family: 'JetBrains Mono', monospace; color: #000000; }
+    .preview-table tbody tr:nth-child(even) td { background: #f8faff; }
+    .preview-table td.col-fe   { font-family: "Courier New", monospace; font-weight: 700; background: #fff !important; white-space: nowrap; }
+    .preview-table td.col-comp { font-family: "Courier New", monospace; }
 
-    /* ── Barra de confirmação ── */
+    /* Área de confirmação */
     .action-row {
       display: none; align-items: center; justify-content: space-between;
       gap: 10px; margin-top: 12px; flex-wrap: wrap;
@@ -156,354 +165,758 @@
       border-radius: 8px; padding: 10px 14px;
     }
     .action-row.on { display: flex; }
+    .action-row span { font-size: 13px; color: var(--accent); font-weight: 600; }
 
-    /* ── Mensagem de sucesso ── */
-    .sent-box {
-      display: none; align-items: center; gap: 8px; margin-top: 12px;
-      padding: 10px 14px; background: var(--green-bg);
-      border: 1px solid var(--green-border); border-radius: 8px;
-      font-size: 13px; color: var(--green); font-weight: 600;
+    /* Pré-visualização da IMAGEM gerada / salva */
+    .image-box {
+      display: none; margin-top: 12px; padding: 12px;
+      background: var(--surface); border: 1px solid var(--green-border);
+      border-radius: var(--radius);
     }
-    .sent-box.on { display: flex; }
+    .image-box.on { display: block; }
+    .image-box-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+      color: var(--green); font-weight: 700;
+    }
+    .image-box img {
+      display: block; max-width: 100%; height: auto;
+      border: 1px solid var(--border); background: #fff;
+    }
+
+    /* =================================================================
+       PALCO DE CAPTURA (fora da tela)
+       -----------------------------------------------------------------
+       A imagem é gerada a partir de uma tabela montada aqui, SEM rolagem
+       e SEM limite de altura, garantindo que TODAS as linhas apareçam no
+       PNG. Fica posicionada fora da área visível do usuário.
+       ================================================================= */
+    .capture-stage {
+      position: absolute;
+      left: -100000px;
+      top: 0;
+      background: #ffffff;
+      padding: 0;
+    }
+    .capture-table {
+      border-collapse: collapse;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #ffffff;
+      min-width: 900px;
+    }
+    .capture-table th {
+      background: #666666; color: #ffffff;
+      padding: 8px 12px; text-align: left; font-weight: 700;
+      border: 1px solid #444444; font-size: 13px; white-space: nowrap;
+    }
+    .capture-table td {
+      padding: 7px 12px; border: 1px solid #d1d5db;
+      color: #000000; vertical-align: middle; font-size: 13px;
+      background: #ffffff;
+    }
+    .capture-table td.col-fe   { font-weight: 700; white-space: nowrap; font-family: "Courier New", monospace; }
+    .capture-table td.col-comp { font-family: "Courier New", monospace; }
+    .capture-table td.alt      { background: #f8faff; }
   </style>
 </head>
+
 <body>
+<div id="widgetContent">
 
-<!-- Input fora da drop zone, totalmente invisível -->
-<input type="file" id="fileIn" accept=".xlsx,.xls,.csv"/>
+  <!-- ETAPA 2 — SELEÇÃO DA PLANILHA (input oculto + drop zone) -->
+  <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" />
 
-<!-- Drop zone sem nenhum elemento filho que intercepte eventos -->
-<div class="drop-zone" id="dz">
-  <div class="dz-icon">📊</div>
-  <div class="dz-title">Arraste a tabela de produtos aqui</div>
-  <div class="dz-sub">ou clique para selecionar &nbsp;<code>.xlsx</code>&nbsp;<code>.xls</code>&nbsp;<code>.csv</code></div>
-</div>
-
-<div class="status" id="status"></div>
-
-<div class="meta-bar" id="metaBar">
-  <div class="chips" id="chips"></div>
-  <div style="display:flex;gap:6px;">
-    <button class="btn btn-ghost" id="btnReset">↩ Novo arquivo</button>
+  <div class="drop-zone" id="dz" role="button" tabindex="0"
+       aria-label="Selecionar planilha de produtos">
+    <div class="dz-icon">📊</div>
+    <div class="dz-title">Arraste a tabela de produtos aqui</div>
+    <div class="dz-sub">ou clique para selecionar &nbsp;<code>.xlsx</code>&nbsp;<code>.xls</code>&nbsp;<code>.csv</code></div>
   </div>
-</div>
 
-<div class="tbl-wrap" id="tblWrap">
-  <div class="tbl-scroll">
-    <table>
-      <thead><tr>
-        <th>FE / Product</th>
-        <th>Referência do Cliente / Customer Reference</th>
-        <th>Composição / Composition</th>
-      </tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
+  <!-- Mensagens de status (anunciadas para leitores de tela) -->
+  <div class="status" id="status" aria-live="polite"></div>
+
+  <!-- Contadores + botão de novo arquivo -->
+  <div class="meta-bar" id="metaBar">
+    <div class="chips" id="chips"></div>
+    <button type="button" class="btn btn-ghost" id="btnReset">↩ Novo arquivo</button>
   </div>
+
+  <!-- ETAPA 3 — PRÉ-VISUALIZAÇÃO DA TABELA -->
+  <div class="tbl-wrap" id="tblWrap">
+    <div class="tbl-scroll">
+      <table class="preview-table">
+        <thead>
+          <tr>
+            <th>FE / Product</th>
+            <th>Referência do Cliente / Customer Reference</th>
+            <th>Composição / Composition</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ETAPA 4 — CONFIRMAÇÃO (gera a imagem e envia ao formulário) -->
+  <div class="action-row" id="actionRow">
+    <span>✅ Tabela pronta — confirme para gerar a imagem e inserir no formulário.</span>
+    <button type="button" class="btn btn-primary" id="btnConfirm">Gerar imagem e inserir →</button>
+  </div>
+
+  <!-- ETAPA 5 — IMAGEM GERADA OU JÁ SALVA NA SUBMISSÃO -->
+  <div class="image-box" id="imageBox">
+    <div class="image-box-header">
+      <span id="imageBoxTitle">✔ Imagem da tabela inserida no formulário</span>
+      <button type="button" class="btn btn-ghost" id="btnReplace">Substituir imagem</button>
+    </div>
+    <img id="imagePreview" alt="Imagem da tabela de produtos" />
+  </div>
+
 </div>
 
-<div class="action-row" id="actionRow">
-  <span style="font-size:13px;color:var(--accent);font-weight:500;">✅ Tabela pronta — confirme para inserir no formulário.</span>
-  <button class="btn btn-primary" id="btnConfirm">Inserir no formulário →</button>
-</div>
-
-<div class="sent-box" id="sentBox">
-  ✔ Tabela inserida com sucesso no formulário!
-</div>
+<!-- Palco de captura fora da tela (preenchido apenas no momento de gerar o PNG) -->
+<div class="capture-stage" id="captureStage" aria-hidden="true"></div>
 
 <script>
-// ── JotForm Custom Widget API ─────────────────────────────────────────────────
-(function(){
-  var s = document.createElement('script');
-  s.src = 'https://js.jotform.com/JFCustomWidget.js';
-  s.onload = function(){
-    if(typeof JFCustomWidget === 'undefined') return;
-    JFCustomWidget.subscribe('ready', function(){});
-    JFCustomWidget.subscribe('submit', function(){
-      JFCustomWidget.sendSubmit({ value: currentValue || '', valid: true });
-    });
-  };
-  document.head.appendChild(s);
-})();
+(function () {
+  'use strict';
 
-window.addEventListener('message', function(e){
-  try {
-    var msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-    if(msg && msg.type === 'form-submit' && currentValue){
-      e.source.postMessage(JSON.stringify({ type: 'widget-data', value: currentValue }), '*');
+  /* ===================================================================
+     ETAPA 6 — ESTADO DO WIDGET
+     -------------------------------------------------------------------
+     grouped      : dados agrupados da planilha (FE + Referência → composições)
+     currentValue : valor que será enviado ao Jotform (JSON "imagelinks")
+     sourceName   : nome do arquivo original (usado para nomear o PNG)
+     widgetReady  : indica se o evento "ready" do Jotform já ocorreu
+     =================================================================== */
+  var grouped      = [];
+  var currentValue = '';
+  var sourceName   = '';
+  var widgetReady  = false;
+  var statusTimer  = null;
+
+  /* Limites de segurança para o canvas (navegadores não suportam canvas
+     gigantes; acima disso a imagem fica em branco ou gera erro). */
+  var MAX_CANVAS_SIDE = 16000;
+  var PREFERRED_SCALE = 2;
+
+  /* ===================================================================
+     ETAPA 7 — REFERÊNCIAS DO DOM
+     =================================================================== */
+  function $(id) { return document.getElementById(id); }
+
+  var dz            = $('dz');
+  var fileIn        = $('fileIn');
+  var statusEl      = $('status');
+  var metaBar       = $('metaBar');
+  var chipsEl       = $('chips');
+  var tblWrap       = $('tblWrap');
+  var tbody         = $('tbody');
+  var actionRow     = $('actionRow');
+  var btnConfirm    = $('btnConfirm');
+  var btnReset      = $('btnReset');
+  var btnReplace    = $('btnReplace');
+  var imageBox      = $('imageBox');
+  var imageBoxTitle = $('imageBoxTitle');
+  var imagePreview  = $('imagePreview');
+  var captureStage  = $('captureStage');
+  var widgetContent = $('widgetContent');
+
+  /* ===================================================================
+     ETAPA 8 — VERIFICA SE A API DO JOTFORM ESTÁ DISPONÍVEL
+     -------------------------------------------------------------------
+     Se o index.html for aberto fora do formulário (direto no navegador),
+     a API não existe. O widget continua mostrando a pré-visualização,
+     mas avisa que o envio só funciona dentro do Jotform.
+     =================================================================== */
+  function hasJotformApi() {
+    return typeof window.JFCustomWidget !== 'undefined';
+  }
+
+  /* ===================================================================
+     ETAPA 9 — REDIMENSIONAMENTO AUTOMÁTICO DO IFRAME
+     -------------------------------------------------------------------
+     Ajusta a altura do iframe ao conteúdo real do widget, conforme
+     orientação do suporte (requestFrameResize).
+     =================================================================== */
+  var resizeTimer = null;
+
+  function resizeWidget() {
+    if (!widgetReady || !hasJotformApi()) return;
+
+    if (resizeTimer) clearTimeout(resizeTimer);
+
+    resizeTimer = setTimeout(function () {
+      var height = Math.ceil(widgetContent.getBoundingClientRect().height) + 40;
+
+      try {
+        JFCustomWidget.requestFrameResize({ height: height });
+      } catch (err) {
+        /* Ignora: o redimensionamento é melhoria visual, não afeta o envio. */
+      }
+    }, 60);
+  }
+
+  /* Redimensiona automaticamente sempre que o conteúdo mudar de tamanho */
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(resizeWidget).observe(widgetContent);
+  }
+  window.addEventListener('resize', resizeWidget);
+
+  /* ===================================================================
+     ETAPA 10 — MENSAGENS DE STATUS
+     =================================================================== */
+  function setStatus(type, message, autoHideMs) {
+    if (statusTimer) clearTimeout(statusTimer);
+
+    statusEl.className   = 'status ' + type;
+    statusEl.textContent = message;
+
+    if (autoHideMs) {
+      statusTimer = setTimeout(clearStatus, autoHideMs);
     }
-  } catch(err){}
-});
 
-// ── Estado ────────────────────────────────────────────────────────────────────
-var grouped      = [];
-var currentValue = '';
-
-// ── Timers para auto-ocultar mensagens ────────────────────────────────────────
-var statusTimer  = null;
-var sentBoxTimer = null;
-var chipsTimer   = null;
-
-// ── DOM ───────────────────────────────────────────────────────────────────────
-var dz         = document.getElementById('dz');
-var fileIn     = document.getElementById('fileIn');
-var statusEl   = document.getElementById('status');
-var metaBar    = document.getElementById('metaBar');
-var chipsEl    = document.getElementById('chips');
-var tblWrap    = document.getElementById('tblWrap');
-var tbody      = document.getElementById('tbody');
-var actionRow  = document.getElementById('actionRow');
-var sentBox    = document.getElementById('sentBox');
-var btnReset   = document.getElementById('btnReset');
-var btnConfirm = document.getElementById('btnConfirm');
-
-// ── Clique na drop zone → abre o seletor de arquivo ──────────────────────────
-dz.addEventListener('click', function(){
-  fileIn.value = ''; // reset para permitir reselecionar o mesmo arquivo
-  fileIn.click();
-});
-
-// ── Drag & Drop ───────────────────────────────────────────────────────────────
-dz.addEventListener('dragenter', function(e){
-  e.preventDefault();
-  e.stopPropagation();
-  dz.classList.add('over');
-});
-dz.addEventListener('dragover', function(e){
-  e.preventDefault();
-  e.stopPropagation();
-  dz.classList.add('over');
-});
-dz.addEventListener('dragleave', function(e){
-  e.preventDefault();
-  e.stopPropagation();
-  // Só remove o destaque se o cursor saiu da drop zone de verdade
-  var rect = dz.getBoundingClientRect();
-  if(e.clientX < rect.left || e.clientX > rect.right ||
-     e.clientY < rect.top  || e.clientY > rect.bottom){
-    dz.classList.remove('over');
+    resizeWidget();
   }
-});
-dz.addEventListener('drop', function(e){
-  e.preventDefault();
-  e.stopPropagation();
-  dz.classList.remove('over');
-  var files = e.dataTransfer.files;
-  if(files && files[0]) handleFile(files[0]);
-});
 
-// ── Seleção via input ─────────────────────────────────────────────────────────
-fileIn.addEventListener('change', function(){
-  if(fileIn.files && fileIn.files[0]) handleFile(fileIn.files[0]);
-});
+  function clearStatus() {
+    if (statusTimer) clearTimeout(statusTimer);
+    statusEl.className   = 'status';
+    statusEl.textContent = '';
+    resizeWidget();
+  }
 
-// ── Despachante de arquivo ────────────────────────────────────────────────────
-function handleFile(file){
-  var ext = file.name.split('.').pop().toLowerCase();
-  if(ext === 'xlsx' || ext === 'xls') parseXLSX(file);
-  else if(ext === 'csv')              parseCSV(file);
-  else setStatus('err', '⚠ Formato inválido. Use <strong>.xlsx</strong> ou <strong>.csv</strong>');
-}
+  /* ===================================================================
+     ETAPA 11 — INTEGRAÇÃO COM O JOTFORM (ready + submit)
+     -------------------------------------------------------------------
+     1. "ready"  : disparado quando o formulário carrega o widget.
+                   Se for edição de submissão, recebe o valor salvo e
+                   exibe a imagem já armazenada.
+     2. "submit" : disparado quando o usuário envia o formulário.
+                   Devolve o valor "imagelinks" mais recente.
+                   valid=false bloqueia o envio se o campo for obrigatório
+                   e nenhuma imagem tiver sido gerada.
+     =================================================================== */
+  if (hasJotformApi()) {
+    JFCustomWidget.subscribe('ready', function (data) {
+      widgetReady = true;
 
-function parseXLSX(file){
-  var reader = new FileReader();
-  reader.onload = function(e){
+      /* Recupera valor salvo (edição de submissão existente) */
+      var savedValue = extractReadyValue(data);
+      var savedImage = extractImageFromValue(savedValue);
+
+      if (savedValue) {
+        currentValue = savedValue;
+      }
+
+      if (savedImage) {
+        showImage(savedImage, 'Imagem atualmente salva na submissão');
+        dz.classList.add('hidden');
+      }
+
+      /* Handler de envio do formulário */
+      JFCustomWidget.subscribe('submit', function () {
+        JFCustomWidget.sendSubmit({
+          value: currentValue,
+          valid: Boolean(currentValue)
+        });
+      });
+
+      resizeWidget();
+    });
+  }
+
+  /* Extrai o valor salvo do evento "ready" (aceita formatos diferentes) */
+  function extractReadyValue(data) {
+    if (!data) return '';
+    if (typeof data.value === 'string') return data.value;
+    if (data.value && typeof data.value.value === 'string') return data.value.value;
+    return '';
+  }
+
+  /* Extrai a URL (ou Base64) da imagem a partir do valor "imagelinks" */
+  function extractImageFromValue(rawValue) {
+    if (!rawValue) return '';
+
     try {
-      var wb   = XLSX.read(e.target.result, { type: 'array' });
-      var ws   = wb.Sheets[wb.SheetNames[0]];
-      var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      processRows(rows, file.name);
-    } catch(err){ setStatus('err', '⚠ Erro ao ler: ' + err.message); }
-  };
-  reader.readAsArrayBuffer(file);
-}
+      var parsed = typeof rawValue === 'string' ? JSON.parse(rawValue) : rawValue;
+      var items  = parsed && parsed.widget_metadata && parsed.widget_metadata.value;
 
-function parseCSV(file){
-  Papa.parse(file, {
-    skipEmptyLines: true,
-    complete: function(r){ processRows(r.data, file.name); },
-    error:    function(e){ setStatus('err', '⚠ Erro: ' + e.message); }
-  });
-}
-
-// ── Processamento ─────────────────────────────────────────────────────────────
-function processRows(rows, filename){
-  if(!rows || rows.length < 2){ setStatus('err', '⚠ Arquivo sem dados.'); return; }
-
-  var header = rows[0].map(function(h){ return String(h || '').trim().toLowerCase(); });
-  var iFE   = colIdx(header, ['fe','nfe','número fe']);
-  var iRef  = colIdx(header, ['referência do cliente','referencia do cliente','ref cliente','referência','referencia']);
-  var iComp = colIdx(header, ['composição','composicao','comp','composition']);
-  if(iFE   < 0) iFE   = 0;
-  if(iRef  < 0) iRef  = 1;
-  if(iComp < 0) iComp = 2;
-
-  var map = [], keyIndex = {};
-  rows.slice(1).forEach(function(row){
-    var fe   = String(row[iFE]   || '').trim();
-    var ref  = String(row[iRef]  || '').trim();
-    var comp = String(row[iComp] || '').trim();
-    if(!fe && !ref && !comp) return;
-    var key = fe + '|||' + ref;
-    if(keyIndex[key] === undefined){ keyIndex[key] = map.length; map.push({ fe: fe, ref: ref, comps: [] }); }
-    if(comp && !map[keyIndex[key]].comps.includes(comp)) map[keyIndex[key]].comps.push(comp);
-  });
-
-  if(!map.length){ setStatus('err', '⚠ Nenhum dado encontrado.'); return; }
-
-  grouped = map;
-  renderPreview();
-
-  var total = map.reduce(function(s, r){ return s + r.comps.length; }, 0);
-
-  // Exibe status de carregamento e oculta após 3 segundos
-  setStatus('ok', '✓ <strong>' + filename + '</strong> carregado com sucesso.');
-  if(statusTimer) clearTimeout(statusTimer);
-  statusTimer = setTimeout(function(){
-    statusEl.className = 'status';
-    statusEl.innerHTML = '';
-  }, 3000);
-
-  chipsEl.innerHTML =
-    '<span class="chip"><b>' + map.length + '</b>&nbsp;produto(s)</span>' +
-    '<span class="chip"><b>' + total + '</b>&nbsp;composição(ões)</span>';
-
-  dz.classList.add('hidden');
-  metaBar.classList.add('on');
-  chipsEl.classList.add('on');
-  
-  // Oculta APENAS os chips após 5 segundos, mantém a metaBar (onde está o botão Novo Arquivo)
-  if(chipsTimer) clearTimeout(chipsTimer);
-  chipsTimer = setTimeout(function(){
-    chipsEl.classList.remove('on');
-  }, 5000);
-
-  tblWrap.classList.add('on');
-  actionRow.classList.add('on');
-  sentBox.classList.remove('on');
-  currentValue = '';
-}
-
-function colIdx(header, candidates){
-  for(var i = 0; i < header.length; i++)
-    if(candidates.indexOf(header[i]) > -1) return i;
-  return -1;
-}
-
-// ── Preview ───────────────────────────────────────────────────────────────────
-function renderPreview(){
-  tbody.innerHTML = '';
-  grouped.forEach(function(item){
-    var comps = item.comps.length ? item.comps : ['—'];
-    comps.forEach(function(comp, ci){
-      var tr = document.createElement('tr');
-      if(ci === 0){
-        tr.appendChild(makeTD(item.fe,  comps.length, 'col-fe'));
-        tr.appendChild(makeTD(item.ref, comps.length, 'col-ref'));
+      if (Array.isArray(items) && items[0]) {
+        var item = items[0];
+        if (typeof item === 'string') return item;
+        return item.url || item.link || item.src || item.base64 || '';
       }
-      var td = document.createElement('td');
-      td.className   = 'col-comp';
-      td.textContent = comp;
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-    });
-  });
-}
-
-function makeTD(text, span, cls){
-  var td = document.createElement('td');
-  td.className   = cls;
-  td.textContent = text;
-  td.rowSpan     = span;
-  return td;
-}
-
-// ── Tabela HTML para o JotForm ────────────────────────────────────────────────
-function buildHTMLTable(){
-  var TH  = 'background:#666666;color:#fff;padding:8px 12px;text-align:left;font-weight:bold;border:1px solid #444444;font-size:10pt;';
-  var TFE = 'padding:7px 12px;border:1px solid #d1d5db;background:#ffffff;font-weight:bold;color:#000000;vertical-align:middle;font-size:10pt;white-space:nowrap;';
-  var TRF = 'padding:7px 12px;border:1px solid #d1d5db;background:#ffffff;color:#000000;vertical-align:middle;font-size:10pt;';
-  var TC1 = 'padding:7px 12px;border:1px solid #d1d5db;font-family:"Courier New",monospace;font-size:10pt;background:#ffffff;color:#000000;';
-  var TC2 = 'padding:7px 12px;border:1px solid #d1d5db;font-family:"Courier New",monospace;font-size:10pt;background:#f8faff;color:#000000;';
-
-  var h = '<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;">';
-  h += '<thead><tr>';
-  h += '<th style="' + TH + '">FE / Product</th>';
-  h += '<th style="' + TH + '">Referência do Cliente / Customer Reference</th>';
-  h += '<th style="' + TH + '">Composição / Composition</th>';
-  h += '</tr></thead><tbody>';
-
-  var p = 0;
-  grouped.forEach(function(item){
-    var comps = item.comps.length ? item.comps : ['—'];
-    comps.forEach(function(comp, ci){
-      h += '<tr>';
-      if(ci === 0){
-        h += '<td rowspan="' + comps.length + '" style="' + TFE + '">' + esc(item.fe)  + '</td>';
-        h += '<td rowspan="' + comps.length + '" style="' + TRF + '">' + esc(item.ref) + '</td>';
+    } catch (err) {
+      /* Valor salvo pode ser uma URL simples após o processamento do Jotform */
+      if (/^https?:\/\//i.test(rawValue) || /^data:image\//i.test(rawValue)) {
+        return rawValue;
       }
-      h += '<td style="' + (p % 2 === 0 ? TC1 : TC2) + '">' + esc(comp) + '</td>';
-      h += '</tr>';
-      if(ci === 0) p++;
-    });
-  });
+    }
 
-  h += '</tbody></table>';
-  return h;
-}
-
-function esc(v){
-  return String(v || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// ── Confirmar e enviar ao JotForm ─────────────────────────────────────────────
-btnConfirm.addEventListener('click', function(){
-  currentValue = buildHTMLTable();
-
-  if(typeof JFCustomWidget !== 'undefined'){
-    JFCustomWidget.sendData({ value: currentValue });
+    return '';
   }
-  try {
-    window.parent.postMessage(JSON.stringify({ type: 'widgetData', value: currentValue }), '*');
-  } catch(e){}
 
-  actionRow.classList.remove('on');
-  metaBar.classList.remove('on'); // Oculta o botão Novo Arquivo agora
+  /* ===================================================================
+     ETAPA 12 — SELEÇÃO DE ARQUIVO (clique, teclado e arrastar/soltar)
+     =================================================================== */
+  function openPicker() {
+    fileIn.value = ''; /* permite selecionar o mesmo arquivo novamente */
+    fileIn.click();
+  }
 
-  // Exibe mensagem de sucesso e oculta após 3 segundos
-  sentBox.classList.add('on');
-  if(sentBoxTimer) clearTimeout(sentBoxTimer);
-  sentBoxTimer = setTimeout(function(){
-    sentBox.classList.remove('on');
-  }, 3000);
-});
+  dz.addEventListener('click', openPicker);
 
-// ── Reset ─────────────────────────────────────────────────────────────────────
-btnReset.addEventListener('click', function(){
-  grouped      = [];
-  currentValue = '';
-  fileIn.value = '';
-  tbody.innerHTML    = '';
-  statusEl.className = 'status';
-  statusEl.innerHTML = '';
-  if(statusTimer)  clearTimeout(statusTimer);
-  if(sentBoxTimer) clearTimeout(sentBoxTimer);
-  if(chipsTimer)   clearTimeout(chipsTimer);
-  dz.classList.remove('hidden');
-  metaBar.classList.remove('on');
-  chipsEl.classList.remove('on');
-  tblWrap.classList.remove('on');
-  actionRow.classList.remove('on');
-  sentBox.classList.remove('on');
-  if(typeof JFCustomWidget !== 'undefined') JFCustomWidget.sendData({ value: '' });
-});
+  dz.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openPicker();
+    }
+  });
 
-// ── Helper status ─────────────────────────────────────────────────────────────
-function setStatus(type, html){
-  statusEl.className = 'status ' + type;
-  statusEl.innerHTML = html;
-}
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    dz.addEventListener(evt, function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      dz.classList.add('over');
+    });
+  });
+
+  dz.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    var rect = dz.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top  || e.clientY > rect.bottom) {
+      dz.classList.remove('over');
+    }
+  });
+
+  dz.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dz.classList.remove('over');
+    var files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files[0]) handleFile(files[0]);
+  });
+
+  fileIn.addEventListener('change', function () {
+    if (fileIn.files && fileIn.files[0]) handleFile(fileIn.files[0]);
+  });
+
+  /* ===================================================================
+     ETAPA 13 — VALIDAÇÃO E DESPACHO DO ARQUIVO
+     =================================================================== */
+  function handleFile(file) {
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+
+    if (['xlsx', 'xls', 'csv'].indexOf(ext) === -1) {
+      setStatus('err', '⚠ Formato inválido. Use .xlsx, .xls ou .csv.');
+      return;
+    }
+
+    /* Nova planilha invalida qualquer imagem anterior */
+    sourceName   = file.name;
+    currentValue = '';
+    hideImage();
+    notifyEmptyValue();
+
+    if (ext === 'csv') {
+      parseCSV(file);
+    } else {
+      parseXLSX(file);
+    }
+  }
+
+  /* ===================================================================
+     ETAPA 14 — LEITURA DA PLANILHA (somente no navegador)
+     =================================================================== */
+  function parseXLSX(file) {
+    var reader = new FileReader();
+
+    reader.onload = function (e) {
+      try {
+        var wb   = XLSX.read(e.target.result, { type: 'array' });
+        var ws   = wb.Sheets[wb.SheetNames[0]];
+        /* raw:false → mantém o texto formatado (evita números/datas convertidos) */
+        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
+        processRows(rows, file.name);
+      } catch (err) {
+        setStatus('err', '⚠ Erro ao ler a planilha: ' + err.message);
+      }
+    };
+
+    reader.onerror = function () {
+      setStatus('err', '⚠ Não foi possível acessar o arquivo.');
+    };
+
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseCSV(file) {
+    Papa.parse(file, {
+      skipEmptyLines: 'greedy',
+      complete: function (result) { processRows(result.data, file.name); },
+      error:    function (err)    { setStatus('err', '⚠ Erro ao ler o CSV: ' + err.message); }
+    });
+  }
+
+  /* ===================================================================
+     ETAPA 15 — IDENTIFICAÇÃO DAS COLUNAS E AGRUPAMENTO
+     -------------------------------------------------------------------
+     Procura as colunas pelo nome (ignorando acentos e maiúsculas).
+     Se não encontrar, usa a posição padrão: A=FE, B=Referência, C=Composição.
+     Agrupa as composições por FE + Referência, sem duplicatas.
+     =================================================================== */
+  function normalize(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function colIdx(header, candidates) {
+    var normalized = candidates.map(normalize);
+    for (var i = 0; i < header.length; i++) {
+      if (normalized.indexOf(header[i]) > -1) return i;
+    }
+    return -1;
+  }
+
+  function processRows(rows, filename) {
+    if (!rows || rows.length < 2) {
+      setStatus('err', '⚠ Arquivo sem dados.');
+      return;
+    }
+
+    var header = rows[0].map(normalize);
+
+    var iFE   = colIdx(header, ['fe', 'nfe', 'número fe', 'numero fe', 'product']);
+    var iRef  = colIdx(header, ['referência do cliente', 'referencia do cliente', 'ref cliente', 'referência', 'referencia', 'customer reference']);
+    var iComp = colIdx(header, ['composição', 'composicao', 'comp', 'composition']);
+
+    if (iFE   < 0) iFE   = 0;
+    if (iRef  < 0) iRef  = 1;
+    if (iComp < 0) iComp = 2;
+
+    var map      = [];
+    var keyIndex = Object.create(null);
+
+    rows.slice(1).forEach(function (row) {
+      var fe   = String(row[iFE]   == null ? '' : row[iFE]).trim();
+      var ref  = String(row[iRef]  == null ? '' : row[iRef]).trim();
+      var comp = String(row[iComp] == null ? '' : row[iComp]).trim();
+
+      if (!fe && !ref && !comp) return;
+
+      var key = fe + '|||' + ref;
+
+      if (keyIndex[key] === undefined) {
+        keyIndex[key] = map.length;
+        map.push({ fe: fe, ref: ref, comps: [] });
+      }
+
+      if (comp && map[keyIndex[key]].comps.indexOf(comp) === -1) {
+        map[keyIndex[key]].comps.push(comp);
+      }
+    });
+
+    if (!map.length) {
+      setStatus('err', '⚠ Nenhum dado encontrado.');
+      return;
+    }
+
+    grouped = map;
+    renderPreview();
+
+    var total = map.reduce(function (sum, item) {
+      return sum + Math.max(item.comps.length, 1);
+    }, 0);
+
+    chipsEl.innerHTML =
+      '<span class="chip"><b>' + map.length + '</b>&nbsp;produto(s)</span>' +
+      '<span class="chip"><b>' + total + '</b>&nbsp;composição(ões)</span>';
+
+    setStatus('ok', '✓ ' + filename + ' carregado com sucesso.', 5000);
+
+    dz.classList.add('hidden');
+    metaBar.classList.add('on');
+    tblWrap.classList.add('on');
+    actionRow.classList.add('on');
+
+    resizeWidget();
+  }
+
+  /* ===================================================================
+     ETAPA 16 — MONTAGEM DAS LINHAS DA TABELA
+     -------------------------------------------------------------------
+     Função reutilizada para a pré-visualização e para a tabela de
+     captura. Usa textContent (seguro contra injeção de HTML).
+     FE e Referência são mesclados (rowSpan) quando há várias composições.
+     =================================================================== */
+  function buildRows(targetTbody, useAltClass) {
+    targetTbody.innerHTML = '';
+    var groupIndex = 0;
+
+    grouped.forEach(function (item) {
+      var comps = item.comps.length ? item.comps : ['—'];
+
+      comps.forEach(function (comp, ci) {
+        var tr = document.createElement('tr');
+
+        if (ci === 0) {
+          tr.appendChild(makeTD(item.fe,  comps.length, 'col-fe'));
+          tr.appendChild(makeTD(item.ref, comps.length, 'col-ref'));
+        }
+
+        var cls = 'col-comp';
+        if (useAltClass && groupIndex % 2 === 1) cls += ' alt';
+
+        tr.appendChild(makeTD(comp, 1, cls));
+        targetTbody.appendChild(tr);
+      });
+
+      groupIndex++;
+    });
+  }
+
+  function makeTD(text, span, cls) {
+    var td = document.createElement('td');
+    td.className   = cls;
+    td.textContent = text;
+    td.rowSpan     = span;
+    return td;
+  }
+
+  function renderPreview() {
+    buildRows(tbody, false);
+  }
+
+  /* ===================================================================
+     ETAPA 17 — CRIA A TABELA COMPLETA NO PALCO DE CAPTURA
+     -------------------------------------------------------------------
+     A tabela de pré-visualização tem rolagem (max-height), então não
+     serve para captura. Aqui montamos uma cópia completa, fora da tela.
+     =================================================================== */
+  function buildCaptureTable() {
+    captureStage.innerHTML = '';
+
+    var table = document.createElement('table');
+    table.className = 'capture-table';
+
+    var thead = document.createElement('thead');
+    var trh   = document.createElement('tr');
+
+    ['FE / Product',
+     'Referência do Cliente / Customer Reference',
+     'Composição / Composition'
+    ].forEach(function (title) {
+      var th = document.createElement('th');
+      th.textContent = title;
+      trh.appendChild(th);
+    });
+
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    var tb = document.createElement('tbody');
+    buildRows(tb, true);
+    table.appendChild(tb);
+
+    captureStage.appendChild(table);
+    return table;
+  }
+
+  /* ===================================================================
+     ETAPA 18 — CONVERTE A TABELA EM PNG (html2canvas)
+     -------------------------------------------------------------------
+     Usa escala 2x para nitidez no PDF, reduzindo automaticamente se a
+     tabela for muito grande (limite de tamanho do canvas no navegador).
+     =================================================================== */
+  function renderTableToCanvas(table) {
+    var width  = Math.ceil(table.scrollWidth);
+    var height = Math.ceil(table.scrollHeight);
+
+    var scale = Math.min(
+      PREFERRED_SCALE,
+      MAX_CANVAS_SIDE / Math.max(width, 1),
+      MAX_CANVAS_SIDE / Math.max(height, 1)
+    );
+
+    if (scale < 0.5) {
+      return Promise.reject(new Error(
+        'A tabela é grande demais para gerar uma única imagem legível. ' +
+        'Divida a planilha em partes menores.'
+      ));
+    }
+
+    return html2canvas(table, {
+      scale: scale,
+      backgroundColor: '#ffffff',
+      logging: false,
+      useCORS: true,
+      width: width,
+      height: height,
+      windowWidth: width,
+      windowHeight: height
+    });
+  }
+
+  /* Gera um nome de arquivo PNG seguro a partir do nome da planilha */
+  function createPngName(originalName) {
+    var base = String(originalName || 'tabela')
+      .replace(/\.[^.]+$/, '')
+      .replace(/[\\/:*?"<>|]+/g, '_')
+      .trim();
+
+    return (base || 'tabela') + '.png';
+  }
+
+  /* ===================================================================
+     ETAPA 19 — MONTA O VALOR "imagelinks" E ENVIA AO JOTFORM
+     -------------------------------------------------------------------
+     Formato indicado pelo suporte do Jotform. Após o envio do formulário,
+     o Jotform processa o Base64 e armazena a imagem na submissão,
+     deixando-a disponível no PDF Editor, e-mails e relatórios.
+     =================================================================== */
+  function buildImageLinksValue(base64Png, fileName) {
+    return JSON.stringify({
+      widget_metadata: {
+        type: 'imagelinks',
+        value: [{
+          name: fileName,
+          base64: base64Png
+        }]
+      }
+    });
+  }
+
+  function generateAndSend() {
+    if (!grouped.length) {
+      setStatus('err', '⚠ Selecione uma planilha válida primeiro.');
+      return;
+    }
+
+    btnConfirm.disabled    = true;
+    btnConfirm.textContent = 'Gerando imagem...';
+    setStatus('info', '⏳ Gerando a imagem da tabela...');
+
+    var table;
+
+    try {
+      table = buildCaptureTable();
+    } catch (err) {
+      finishWithError(err);
+      return;
+    }
+
+    renderTableToCanvas(table)
+      .then(function (canvas) {
+        var base64Png = canvas.toDataURL('image/png');
+
+        if (!base64Png || base64Png === 'data:,') {
+          throw new Error('O navegador não conseguiu gerar a imagem.');
+        }
+
+        /* Valor final que irá para a submissão */
+        currentValue = buildImageLinksValue(base64Png, createPngName(sourceName));
+
+        if (!hasJotformApi() || !widgetReady) {
+          throw new Error(
+            'A API do Jotform não está ativa. Teste o widget dentro do formulário publicado.'
+          );
+        }
+
+        /* Envia imediatamente ao formulário (o submit reenviará o mesmo valor) */
+        JFCustomWidget.sendData({ value: currentValue, valid: true });
+
+        /* Atualiza a interface */
+        actionRow.classList.remove('on');
+        tblWrap.classList.remove('on');
+        showImage(base64Png, '✔ Imagem da tabela inserida no formulário');
+        setStatus('ok', '✓ Imagem gerada. Agora é só enviar o formulário.', 6000);
+      })
+      .catch(function (err) {
+        finishWithError(err);
+      })
+      .then(function () {
+        /* Limpeza (executa sempre, com sucesso ou erro) */
+        captureStage.innerHTML = '';
+        btnConfirm.disabled    = false;
+        btnConfirm.textContent = 'Gerar imagem e inserir →';
+        resizeWidget();
+      });
+  }
+
+  function finishWithError(err) {
+    /* Em caso de falha, mantém a imagem gerada visível apenas se foi enviada */
+    if (!hasJotformApi() || !widgetReady) {
+      setStatus('err', '⚠ ' + err.message);
+      return;
+    }
+    currentValue = '';
+    notifyEmptyValue();
+    setStatus('err', '⚠ Falha ao gerar ou enviar a imagem: ' + err.message);
+  }
+
+  btnConfirm.addEventListener('click', generateAndSend);
+
+  /* ===================================================================
+     ETAPA 20 — EXIBIÇÃO DA IMAGEM (gerada agora ou já salva)
+     =================================================================== */
+  function showImage(src, title) {
+    imagePreview.src          = src;
+    imageBoxTitle.textContent = title;
+    imageBox.classList.add('on');
+    resizeWidget();
+  }
+
+  function hideImage() {
+    imageBox.classList.remove('on');
+    imagePreview.removeAttribute('src');
+  }
+
+  /* Informa ao Jotform que o campo está vazio (ex.: após reset) */
+  function notifyEmptyValue() {
+    if (widgetReady && hasJotformApi()) {
+      JFCustomWidget.sendData({ value: '', valid: false });
+    }
+  }
+
+  /* ===================================================================
+     ETAPA 21 — RESET / SUBSTITUIR IMAGEM
+     -------------------------------------------------------------------
+     Limpa tudo e volta para a seleção de planilha. O valor enviado ao
+     formulário também é limpo até que uma nova imagem seja gerada.
+     =================================================================== */
+  function resetWidget() {
+    grouped      = [];
+    currentValue = '';
+    sourceName   = '';
+    fileIn.value = '';
+
+    tbody.innerHTML        = '';
+    chipsEl.innerHTML      = '';
+    captureStage.innerHTML = '';
+
+    clearStatus();
+    hideImage();
+
+    dz.classList.remove('hidden');
+    metaBar.classList.remove('on');
+    tblWrap.classList.remove('on');
+    actionRow.classList.remove('on');
+
+    notifyEmptyValue();
+    resizeWidget();
+  }
+
+  btnReset.addEventListener('click', resetWidget);
+  btnReplace.addEventListener('click', resetWidget);
+
+})();
 </script>
 </body>
 </html>
