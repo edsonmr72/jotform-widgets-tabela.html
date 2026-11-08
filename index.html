@@ -3,11 +3,23 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Widget - Tabela dinâmica (Imagem)</title>
+  <title>Widget – Tabela de Produtos (Imagem)</title>
 
-  <!-- Leitura local de XLSX/CSV. html2canvas gera a imagem;
-       JotFormCustomWidget mantem a integracao existente com o formulario. -->
-  <script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=Ch27tTTgeYzn28_T4YadZlIMRR0dn648ntk9Ubyd0QzCTEm9mblnj1aPXfKs-471XDSqx_XOK1Px81co1TPaMj_T8FViZp6qEF8sO_0HhHtDoP6wzF3Griy0zlt-w4vAlg8IIKsiYGWZ9oS3MfoqqXg88Mbag0AOfy53dtHiIWkE_QlBDl-77SG8PkSRsDVAMT34aDHFw2vZ_0_9DXFwSZMkiid5w0v29icKoTjfhTwIQKxd_apVYMU0Nyx8GOeaMOsLEv9VB1aIMrfIpE1M1Nwifm_BTl_89zUJFzkS4M8" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9rbGFiaW4tbXkuc2hhcmVwb2ludC5jb20vcGVyc29uYWwvZXJpY2h0ZXJfa2xhYmluX2NvbV9ici9fbGF5b3V0cy8xNS9kb3dubG9hZC5hc3B4P1NvdXJjZVVybD0lMmZwZXJzb25hbCUyZmVyaWNodGVyX2tsYWJpbl9jb21fYnIlMmZEb2N1bWVudHMlMmZEb2N1bWVudG9zJTJmQ29waWxvdCUyZkNyaWFkbyUyZmluZGV4X2RpbmFtaWNvLmh0bWw"/><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!--
+  =====================================================================
+  ETAPA 0 — DEPENDÊNCIAS
+  ---------------------------------------------------------------------
+  - SheetJS (xlsx)     : lê arquivos .xlsx e .xls no navegador.
+  - PapaParse          : lê arquivos .csv no navegador.
+  - html2canvas        : converte a tabela HTML em imagem (canvas → PNG).
+  - JotFormCustomWidget: API oficial de comunicação widget ↔ formulário
+                         (eventos ready/submit, sendData, sendSubmit,
+                         requestFrameResize).
+  Observação: a planilha é processada SOMENTE no navegador.
+  Nenhum arquivo Excel/CSV é enviado ao Jotform — apenas a imagem PNG.
+  =====================================================================
+  -->
+  <script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=U6NttL16Eo25WBHt48JHHOelOdWLccR6x4ZZmjgPDu9BxTL_-xdRAmIjfwC3LqJv0icmsBi-u_0F-Ay4y9tdMC9X-n-eiVqJPPCBWWYiGFcBVdwPPk_Z4tR5Qsc2CFJPxgpSS_c8NUlEk8U7yJnZ5tGqEi-mav9xEKlYKzl8nEogowVNG2EmFU4Wsc4GnM2nEdxKpmQWEa4o8ldZK7fnjjUbj1OC3T7KQeRLcxKvgg_HsnFPij4ZlD9Fps2-K6B6AwTKiTxosbT2QkR1NSEZhM0HemF3wRlSu58GNw145yUaJED5pWQXI7k0Uy7i_FwY" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9rbGFiaW4tbXkuc2hhcmVwb2ludC5jb20vcGVyc29uYWwvZXJpY2h0ZXJfa2xhYmluX2NvbV9ici9fbGF5b3V0cy8xNS9kb3dubG9hZC5hc3B4P1NvdXJjZVVybD0lMmZwZXJzb25hbCUyZmVyaWNodGVyX2tsYWJpbl9jb21fYnIlMmZEb2N1bWVudHMlMmZEb2N1bWVudG9zJTJmQ29waWxvdCUyZkNyaWFkbyUyZmluZGV4X2xhcmd1cmFzX2FqdXN0YXZlaXMuaHRtbA"/><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 
   <style>
@@ -204,17 +216,18 @@
     .capture-table td.col-comp { font-family: "Courier New", monospace; }
     .capture-table td.alt      { background: #f8faff; }
 
-    /* Colunas determinadas pelo arquivo, sem larguras ou nomes fixos. */
-    .preview-table, .capture-table { table-layout: fixed; }
-    .preview-table thead th, .capture-table th {
-      white-space: pre-wrap; line-height: 1.3; vertical-align: middle;
-      text-transform: none; letter-spacing: normal; overflow-wrap: anywhere;
-    }
-    .preview-table td, .capture-table td {
-      white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.35;
-      padding: 10px; text-align: left;
-    }
-    .capture-table { min-width: 0; }
+    /* Layout dinamico e ajuste manual */
+.preview-table,.capture-table{table-layout:fixed;min-width:0;}
+.preview-table thead th,.capture-table th{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35;text-transform:none;letter-spacing:normal;}
+.preview-table td,.capture-table td{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35;padding:10px;}
+.preview-table th{position:sticky;padding-right:18px;}
+.column-handle{position:absolute;right:0;top:0;bottom:0;width:12px;cursor:col-resize;touch-action:none;border:0;border-right:3px solid #c7d9f9;background:transparent;padding:0;}
+.column-handle:hover,.column-handle:focus-visible{background:#1a56db;outline:2px solid #fff;outline-offset:-3px;}
+.width-panel{margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:#fff;}
+.width-fields{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;max-height:220px;overflow:auto;}
+.width-field{display:flex;flex-direction:column;gap:4px;flex:1 1 160px;min-width:0;max-width:240px;overflow-wrap:anywhere;}
+.width-field input{width:100%;padding:7px;border:1px solid #6b7585;border-radius:4px;font:inherit;}
+.width-hint{color:#495364;font-size:12px;margin-top:6px;}
   </style>
 </head>
 
@@ -225,7 +238,7 @@
   <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" />
 
   <div class="drop-zone" id="dz" role="button" tabindex="0"
-       aria-label="Selecionar planilha">
+       aria-label="Selecionar planilha de produtos">
     <div class="dz-icon">📊</div>
     <div class="dz-title">Arraste sua planilha aqui</div>
     <div class="dz-sub">ou clique para selecionar &nbsp;<code>.xlsx</code>&nbsp;<code>.xls</code>&nbsp;<code>.csv</code></div>
@@ -240,6 +253,13 @@
     <button type="button" class="btn btn-ghost" id="btnReset">↩ Novo arquivo</button>
   </div>
 
+  <section id="widthPanel" class="width-panel hidden" aria-label="Larguras das colunas">
+    <strong>Ajustar largura das colunas</strong>
+    <p class="width-hint">Arraste a borda direita de cada cabeçalho ou informe a largura em pixels (60 a 1200).</p>
+    <div id="widthFields" class="width-fields"></div>
+    <button type="button" class="btn btn-ghost" id="btnWidthsReset">Restaurar larguras</button>
+    <p id="widthNotice" class="width-hint" aria-live="polite"></p>
+  </section>
   <!-- ETAPA 3 — PRÉ-VISUALIZAÇÃO DA TABELA -->
   <div class="tbl-wrap" id="tblWrap">
     <div class="tbl-scroll">
@@ -262,7 +282,7 @@
       <span id="imageBoxTitle">✔ Imagem da tabela inserida no formulário</span>
       <button type="button" class="btn btn-ghost" id="btnReplace">Substituir imagem</button>
     </div>
-    <img id="imagePreview" alt="Imagem da tabela" />
+    <img id="imagePreview" alt="Imagem da tabela de produtos" />
   </div>
 
 </div>
@@ -277,13 +297,15 @@
   /* ===================================================================
      ETAPA 6 — ESTADO DO WIDGET
      -------------------------------------------------------------------
-     grouped      : linhas da planilha, preservadas sem agrupamento
+     grouped      : dados agrupados da planilha (FE + Referência → composições)
      currentValue : valor que será enviado ao Jotform (JSON "imagelinks")
      sourceName   : nome do arquivo original (usado para nomear o PNG)
      widgetReady  : indica se o evento "ready" do Jotform já ocorreu
      =================================================================== */
   var grouped      = [];
   var columnHeaders = [];
+  var columnWidths = [];
+  var widthInputs = [];
   var currentValue = '';
   var sourceName   = '';
   var widgetReady  = false;
@@ -510,13 +532,9 @@
     }
 
     /* Nova planilha invalida qualquer imagem anterior */
-    grouped = [];
-    columnHeaders = [];
-    tbody.innerHTML = '';
-    $('previewHead').innerHTML = '';
-    tblWrap.classList.remove('on');
-    actionRow.classList.remove('on');
-    metaBar.classList.remove('on');
+    columnHeaders=[];columnWidths=[];grouped=[];
+    $('widthPanel').classList.add('hidden');
+    tblWrap.classList.remove('on');actionRow.classList.remove('on');metaBar.classList.remove('on');
     sourceName   = file.name;
     currentValue = '';
     hideImage();
@@ -683,99 +701,92 @@
      Se não encontrar, usa a posição padrão: A=FE, B=Referência, C=Composição.
      Agrupa as composições por FE + Referência, sem duplicatas.
      =================================================================== */
-  // A primeira linha nao vazia contem os titulos; as demais sao dados.
   function processRows(rows, filename) {
-    var clean = (rows || []).filter(function (row) {
-      return Array.isArray(row) && row.some(function (v) {
-        return v != null && String(v).trim() !== '';
-      });
+    var clean = (rows || []).filter(function(row) {
+      return Array.isArray(row) && row.some(function(v) {return v != null && String(v).trim() !== '';});
     });
-    if (clean.length < 2) {
-      setStatus('err', 'O arquivo precisa conter uma linha de cabeçalhos e pelo menos uma linha de dados.');
-      return;
-    }
-    var count = clean.reduce(function (max, row) {
-      var last = row.length;
-      while (last > 0 && (row[last - 1] == null || String(row[last - 1]).trim() === '')) last--;
-      return Math.max(max, last);
-    }, 0);
-    var headers = Array.from({ length: count }, function (_, i) {
-      return clean[0][i] == null ? '' : String(clean[0][i]);
-    });
-    if (headers.some(function (h) { return !h.trim(); })) {
-      setStatus('err', 'Há coluna com dados sem título. Preencha todos os cabeçalhos na primeira linha do arquivo.');
-      return;
-    }
-    columnHeaders = headers;
-    // Preserva todas as linhas, sem agrupamento por nomes ou posicoes fixas.
-    grouped = clean.slice(1).map(function (row) {
-      return columnHeaders.map(function (_, i) {
-        return row[i] == null ? '' : String(row[i]);
-      });
-    });
+    if (clean.length < 2) {setStatus('err','O arquivo precisa conter cabeçalhos e dados.');return;}
+    var count = clean.reduce(function(n,row) {
+      var last=row.length;
+      while(last && (row[last-1] == null || String(row[last-1]).trim()==='')) last--;
+      return Math.max(n,last);
+    },0);
+    var headers=Array.from({length:count},function(_,i){return clean[0][i]==null?'':String(clean[0][i]);});
+    if(headers.some(function(h){return !h.trim();})) {setStatus('err','Preencha o título de todas as colunas com dados.');return;}
+    columnHeaders=headers;
+    columnWidths=headers.map(function(){return Math.max(150,Math.round(900/count));});
+    grouped=clean.slice(1).map(function(row){return headers.map(function(_,i){return row[i]==null?'':String(row[i]);});});
     renderPreview();
-    chipsEl.textContent = grouped.length + ' linha(s) | ' + columnHeaders.length + ' coluna(s)';
-    setStatus('ok', filename + ' carregado com sucesso.', 5000);
-    dz.classList.add('hidden');
-    metaBar.classList.add('on');
-    tblWrap.classList.add('on');
-    actionRow.classList.add('on');
+    buildWidthControls();
+    chipsEl.textContent=grouped.length+' linha(s) | '+headers.length+' coluna(s)';
+    dz.classList.add('hidden');metaBar.classList.add('on');tblWrap.classList.add('on');actionRow.classList.add('on');
+    $('widthPanel').classList.remove('hidden');
+    setStatus('ok',filename+' carregado. Ajuste as larguras antes de gerar a imagem.',5000);
     resizeWidget();
   }
-
-  function buildHeader(targetHead) {
-    targetHead.innerHTML = '';
-    var tr = document.createElement('tr');
-    columnHeaders.forEach(function (title) {
-      var th = document.createElement('th');
-      th.scope = 'col';
-      th.textContent = title;
-      tr.appendChild(th);
+  function clampWidth(value) {return Math.min(1200,Math.max(60,Math.round(value)));}
+  function tableWidth() {return columnWidths.reduce(function(total,w){return total+w;},0);}
+  function applyWidths(table) {
+    var old=table.querySelector('colgroup');if(old) old.remove();
+    var group=document.createElement('colgroup');
+    columnWidths.forEach(function(w){var col=document.createElement('col');col.style.width=w+'px';group.appendChild(col);});
+    table.insertBefore(group,table.firstChild);
+    table.style.width=tableWidth()+'px';table.style.minWidth=tableWidth()+'px';
+  }
+  function setColumnWidth(index,value) {
+    columnWidths[index]=clampWidth(value);
+    var cols=tbody.closest('table').querySelectorAll('col');
+    if(cols[index]) cols[index].style.width=columnWidths[index]+'px';
+    var table=tbody.closest('table');table.style.width=tableWidth()+'px';table.style.minWidth=tableWidth()+'px';
+    if(widthInputs[index]) widthInputs[index].value=columnWidths[index];
+    var handle=$('previewHead').querySelectorAll('.column-handle')[index];
+    if(handle) handle.setAttribute('aria-valuenow',columnWidths[index]);
+    $('widthNotice').textContent='Largura total: '+tableWidth()+' px. As medidas serão usadas na imagem.';
+  }
+  function buildWidthControls() {
+    $('widthFields').innerHTML='';widthInputs=[];
+    columnHeaders.forEach(function(title,i){
+      var label=document.createElement('label');label.className='width-field';
+      var name=document.createElement('span');name.textContent=title+' (px)';label.appendChild(name);
+      var input=document.createElement('input');input.type='number';input.min='60';input.max='1200';input.step='1';input.value=columnWidths[i];
+      input.addEventListener('input',function(){var n=Number(input.value);if(input.value.trim()!=='' && Number.isFinite(n) && n>=60 && n<=1200) setColumnWidth(i,n);});
+      input.addEventListener('change',function(){var n=Number(input.value);if(input.value.trim()==='' || !Number.isFinite(n)){input.value=columnWidths[i];$('widthNotice').textContent='Informe uma largura entre 60 e 1200 px.';}else setColumnWidth(i,n);});
+      label.appendChild(input);$('widthFields').appendChild(label);widthInputs.push(input);
     });
-    targetHead.appendChild(tr);
+    $('widthNotice').textContent='Largura total: '+tableWidth()+' px. As medidas serão usadas na imagem.';
   }
-
-  function buildRows(targetTbody, useAltClass) {
-    targetTbody.innerHTML = '';
-    var fragment = document.createDocumentFragment();
-    grouped.forEach(function (row, index) {
-      var tr = document.createElement('tr');
-      row.forEach(function (value) {
-        var td = document.createElement('td');
-        td.textContent = value;
-        if (useAltClass && index % 2 === 1) td.className = 'alt';
-        tr.appendChild(td);
-      });
-      fragment.appendChild(tr);
+  function addResizeHandle(th,index) {
+    var handle=document.createElement('button');handle.type='button';handle.className='column-handle';
+    handle.setAttribute('role','slider');handle.setAttribute('aria-label','Largura de '+columnHeaders[index]);
+    handle.setAttribute('aria-valuemin','60');handle.setAttribute('aria-valuemax','1200');handle.setAttribute('aria-valuenow',columnWidths[index]);
+    handle.title='Arraste para ajustar. No teclado, use as setas esquerda e direita.';
+    handle.addEventListener('pointerdown',function(e){
+      if(e.button!==0) return;e.preventDefault();
+      var start=e.clientX,initial=columnWidths[index];handle.setPointerCapture(e.pointerId);
+      function move(ev){setColumnWidth(index,initial+ev.clientX-start);}
+      function end(){handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',end);handle.removeEventListener('pointercancel',end);handle.removeEventListener('lostpointercapture',end);}
+      handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',end);handle.addEventListener('lostpointercapture',end);
     });
-    targetTbody.appendChild(fragment);
+    handle.addEventListener('keydown',function(e){if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setColumnWidth(index,columnWidths[index]+(e.key==='ArrowRight'?10:-10));}});
+    th.appendChild(handle);
   }
-
-  function tableWidth() {
-    return Math.max(900, columnHeaders.length * 150);
+  function buildHeader(head,editable) {
+    head.innerHTML='';var tr=document.createElement('tr');
+    columnHeaders.forEach(function(title,i){var th=document.createElement('th');th.scope='col';th.textContent=title;if(editable)addResizeHandle(th,i);tr.appendChild(th);});
+    head.appendChild(tr);
   }
-
-  function renderPreview() {
-    buildHeader($('previewHead'));
-    var table = tbody.closest('table');
-    table.style.minWidth = tableWidth() + 'px';
-    buildRows(tbody, false);
+  function buildRows(target,alternate) {
+    target.innerHTML='';var fragment=document.createDocumentFragment();
+    grouped.forEach(function(row,i){var tr=document.createElement('tr');row.forEach(function(value){var td=document.createElement('td');td.textContent=value;if(alternate && i%2)td.className='alt';tr.appendChild(td);});fragment.appendChild(tr);});
+    target.appendChild(fragment);
   }
-
+  function renderPreview() {buildHeader($('previewHead'),true);buildRows(tbody,false);applyWidths(tbody.closest('table'));}
   function buildCaptureTable() {
-    captureStage.innerHTML = '';
-    var table = document.createElement('table');
-    table.className = 'capture-table';
-    table.style.width = tableWidth() + 'px';
-    var thead = document.createElement('thead');
-    buildHeader(thead);
-    table.appendChild(thead);
-    var tb = document.createElement('tbody');
-    buildRows(tb, true);
-    table.appendChild(tb);
-    captureStage.appendChild(table);
-    return table;
+    captureStage.innerHTML='';var table=document.createElement('table');table.className='capture-table';
+    var head=document.createElement('thead');buildHeader(head,false);table.appendChild(head);
+    var body=document.createElement('tbody');buildRows(body,true);table.appendChild(body);applyWidths(table);captureStage.appendChild(table);return table;
   }
+  $('btnWidthsReset').addEventListener('click',function(){columnWidths=columnHeaders.map(function(){return Math.max(150,Math.round(900/columnHeaders.length));});renderPreview();buildWidthControls();});
 
   function renderTableToCanvas(table) {
     var width  = Math.ceil(table.scrollWidth);
@@ -992,8 +1003,8 @@
      =================================================================== */
   function resetWidget() {
     grouped      = [];
-    columnHeaders = [];
-    $('previewHead').innerHTML = '';
+    columnHeaders=[];columnWidths=[];widthInputs=[];
+    $('previewHead').innerHTML='';$('widthFields').innerHTML='';$('widthPanel').classList.add('hidden');
     currentValue = '';
     sourceName   = '';
     fileIn.value = '';
