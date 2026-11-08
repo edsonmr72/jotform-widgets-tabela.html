@@ -19,7 +19,7 @@
   Nenhum arquivo Excel/CSV é enviado ao Jotform — apenas a imagem PNG.
   =====================================================================
   -->
-  <script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=U6NttL16Eo25WBHt48JHHOelOdWLccR6x4ZZmjgPDu9BxTL_-xdRAmIjfwC3LqJv0icmsBi-u_0F-Ay4y9tdMC9X-n-eiVqJPPCBWWYiGFcBVdwPPk_Z4tR5Qsc2CFJPxgpSS_c8NUlEk8U7yJnZ5tGqEi-mav9xEKlYKzl8nEogowVNG2EmFU4Wsc4GnM2nEdxKpmQWEa4o8ldZK7fnjjUbj1OC3T7KQeRLcxKvgg_HsnFPij4ZlD9Fps2-K6B6AwTKiTxosbT2QkR1NSEZhM0HemF3wRlSu58GNw145yUaJED5pWQXI7k0Uy7i_FwY" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9rbGFiaW4tbXkuc2hhcmVwb2ludC5jb20vcGVyc29uYWwvZXJpY2h0ZXJfa2xhYmluX2NvbV9ici9fbGF5b3V0cy8xNS9kb3dubG9hZC5hc3B4P1NvdXJjZVVybD0lMmZwZXJzb25hbCUyZmVyaWNodGVyX2tsYWJpbl9jb21fYnIlMmZEb2N1bWVudHMlMmZEb2N1bWVudG9zJTJmQ29waWxvdCUyZkNyaWFkbyUyZmluZGV4X2xhcmd1cmFzX2FqdXN0YXZlaXMuaHRtbA"/><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=fsvz_hAtAm4zNv19UXuMWC6u0K64A-Kt9DMePJALJKgv-isQTI3w9hWYfviNhEiqn6LAh7iz5JcwQxWNlrJ2Lgxu-Ae8JEc6P4_oWiEc6iSH-A0aNmYxJh7zrOaxXmIb6Um46ZtbHSSPXKeO5TbOgzECuQMG4QCQtHWuDqvVnc_VQXgFHJfd0ZwLl391GY4LwCx3LoF7BFDN_xFqgEcpQdPEB6E9ygdd2jhghFuJuv3GozzHE8Oiepob0qmNAw6x_A6PTASbDShNx4o2K9GduXylPAG77xVS7Pwz5nXFB4HdeUBpbQOy0TBcx2DBVs5f" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9rbGFiaW4tbXkuc2hhcmVwb2ludC5jb20vcGVyc29uYWwvZXJpY2h0ZXJfa2xhYmluX2NvbV9ici9fbGF5b3V0cy8xNS9kb3dubG9hZC5hc3B4P1NvdXJjZVVybD0lMmZwZXJzb25hbCUyZmVyaWNodGVyX2tsYWJpbl9jb21fYnIlMmZEb2N1bWVudHMlMmZEb2N1bWVudG9zJTJmQ29waWxvdCUyZkNyaWFkbyUyZmluZGV4X2FqdXN0ZXNfb2N1bHRvcy5odG1s"/><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 
   <style>
@@ -977,6 +977,7 @@
      ETAPA 20 — EXIBIÇÃO DA IMAGEM (gerada agora ou já salva)
      =================================================================== */
   function showImage(src, title) {
+    $('widthPanel').classList.add('hidden');
     imagePreview.src          = src;
     imageBoxTitle.textContent = title;
     imageBox.classList.add('on');
