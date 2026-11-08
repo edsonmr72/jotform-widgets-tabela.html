@@ -3,25 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Widget – Tabela de Produtos (Imagem)</title>
+  <title>Widget - Tabela dinâmica (Imagem)</title>
 
-  <!--
-  =====================================================================
-  ETAPA 0 — DEPENDÊNCIAS
-  ---------------------------------------------------------------------
-  - SheetJS (xlsx)     : lê arquivos .xlsx e .xls no navegador.
-  - PapaParse          : lê arquivos .csv no navegador.
-  - html2canvas        : converte a tabela HTML em imagem (canvas → PNG).
-  - JotFormCustomWidget: API oficial de comunicação widget ↔ formulário
-                         (eventos ready/submit, sendData, sendSubmit,
-                         requestFrameResize).
-  Observação: a planilha é processada SOMENTE no navegador.
-  Nenhum arquivo Excel/CSV é enviado ao Jotform — apenas a imagem PNG.
-  =====================================================================
-  -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <!-- Leitura local de XLSX/CSV. html2canvas gera a imagem;
+       JotFormCustomWidget mantem a integracao existente com o formulario. -->
+  <script type="text/javascript" src="https://gc.kis.v2.scr.kaspersky-labs.com/FD126C42-EBFA-4E12-B309-BB3FDD723AC1/main.js?attr=Ch27tTTgeYzn28_T4YadZlIMRR0dn648ntk9Ubyd0QzCTEm9mblnj1aPXfKs-471XDSqx_XOK1Px81co1TPaMj_T8FViZp6qEF8sO_0HhHtDoP6wzF3Griy0zlt-w4vAlg8IIKsiYGWZ9oS3MfoqqXg88Mbag0AOfy53dtHiIWkE_QlBDl-77SG8PkSRsDVAMT34aDHFw2vZ_0_9DXFwSZMkiid5w0v29icKoTjfhTwIQKxd_apVYMU0Nyx8GOeaMOsLEv9VB1aIMrfIpE1M1Nwifm_BTl_89zUJFzkS4M8" charset="UTF-8"></script><link rel="stylesheet" crossorigin="anonymous" href="https://gc.kis.v2.scr.kaspersky-labs.com/E3E8934C-235A-4B0E-825A-35A08381A191/abn/main.css?attr=aHR0cHM6Ly9rbGFiaW4tbXkuc2hhcmVwb2ludC5jb20vcGVyc29uYWwvZXJpY2h0ZXJfa2xhYmluX2NvbV9ici9fbGF5b3V0cy8xNS9kb3dubG9hZC5hc3B4P1NvdXJjZVVybD0lMmZwZXJzb25hbCUyZmVyaWNodGVyX2tsYWJpbl9jb21fYnIlMmZEb2N1bWVudHMlMmZEb2N1bWVudG9zJTJmQ29waWxvdCUyZkNyaWFkbyUyZmluZGV4X2RpbmFtaWNvLmh0bWw"/><script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://js.jotform.com/JotFormCustomWidget.min.js"></script>
 
   <style>
@@ -217,6 +203,18 @@
     .capture-table td.col-fe   { font-weight: 700; white-space: nowrap; font-family: "Courier New", monospace; }
     .capture-table td.col-comp { font-family: "Courier New", monospace; }
     .capture-table td.alt      { background: #f8faff; }
+
+    /* Colunas determinadas pelo arquivo, sem larguras ou nomes fixos. */
+    .preview-table, .capture-table { table-layout: fixed; }
+    .preview-table thead th, .capture-table th {
+      white-space: pre-wrap; line-height: 1.3; vertical-align: middle;
+      text-transform: none; letter-spacing: normal; overflow-wrap: anywhere;
+    }
+    .preview-table td, .capture-table td {
+      white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.35;
+      padding: 10px; text-align: left;
+    }
+    .capture-table { min-width: 0; }
   </style>
 </head>
 
@@ -227,9 +225,9 @@
   <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" />
 
   <div class="drop-zone" id="dz" role="button" tabindex="0"
-       aria-label="Selecionar planilha de produtos">
+       aria-label="Selecionar planilha">
     <div class="dz-icon">📊</div>
-    <div class="dz-title">Arraste a tabela de produtos aqui</div>
+    <div class="dz-title">Arraste sua planilha aqui</div>
     <div class="dz-sub">ou clique para selecionar &nbsp;<code>.xlsx</code>&nbsp;<code>.xls</code>&nbsp;<code>.csv</code></div>
   </div>
 
@@ -246,13 +244,7 @@
   <div class="tbl-wrap" id="tblWrap">
     <div class="tbl-scroll">
       <table class="preview-table">
-        <thead>
-          <tr>
-            <th>FE / Product</th>
-            <th>Referência do Cliente / Customer Reference</th>
-            <th>Composição / Composition</th>
-          </tr>
-        </thead>
+        <thead id="previewHead"></thead>
         <tbody id="tbody"></tbody>
       </table>
     </div>
@@ -270,7 +262,7 @@
       <span id="imageBoxTitle">✔ Imagem da tabela inserida no formulário</span>
       <button type="button" class="btn btn-ghost" id="btnReplace">Substituir imagem</button>
     </div>
-    <img id="imagePreview" alt="Imagem da tabela de produtos" />
+    <img id="imagePreview" alt="Imagem da tabela" />
   </div>
 
 </div>
@@ -285,12 +277,13 @@
   /* ===================================================================
      ETAPA 6 — ESTADO DO WIDGET
      -------------------------------------------------------------------
-     grouped      : dados agrupados da planilha (FE + Referência → composições)
+     grouped      : linhas da planilha, preservadas sem agrupamento
      currentValue : valor que será enviado ao Jotform (JSON "imagelinks")
      sourceName   : nome do arquivo original (usado para nomear o PNG)
      widgetReady  : indica se o evento "ready" do Jotform já ocorreu
      =================================================================== */
   var grouped      = [];
+  var columnHeaders = [];
   var currentValue = '';
   var sourceName   = '';
   var widgetReady  = false;
@@ -517,6 +510,13 @@
     }
 
     /* Nova planilha invalida qualquer imagem anterior */
+    grouped = [];
+    columnHeaders = [];
+    tbody.innerHTML = '';
+    $('previewHead').innerHTML = '';
+    tblWrap.classList.remove('on');
+    actionRow.classList.remove('on');
+    metaBar.classList.remove('on');
     sourceName   = file.name;
     currentValue = '';
     hideImage();
@@ -532,33 +532,147 @@
   /* ===================================================================
      ETAPA 14 — LEITURA DA PLANILHA (somente no navegador)
      =================================================================== */
-  function parseXLSX(file) {
-    var reader = new FileReader();
+  /* Leitor NATIVO de .xlsx (sem bibliotecas externas).
+     O .xlsx é um ZIP com XMLs: lê o ZIP, descompacta com
+     DecompressionStream e interpreta a 1ª planilha com DOMParser. */
+  function u16(d, o) { return d[o] | (d[o + 1] << 8); }
+  function u32(d, o) { return (d[o] | (d[o + 1] << 8) | (d[o + 2] << 16) | (d[o + 3] << 24)) >>> 0; }
 
-    reader.onload = function (e) {
-      try {
-        var wb   = XLSX.read(e.target.result, { type: 'array' });
-        var ws   = wb.Sheets[wb.SheetNames[0]];
-        /* raw:false → mantém o texto formatado (evita números/datas convertidos) */
-        var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-        processRows(rows, file.name);
-      } catch (err) {
-        setStatus('err', '⚠ Erro ao ler a planilha: ' + err.message);
-      }
-    };
-
-    reader.onerror = function () {
-      setStatus('err', '⚠ Não foi possível acessar o arquivo.');
-    };
-
-    reader.readAsArrayBuffer(file);
+  function readZip(buf) {
+    var d = new Uint8Array(buf), eocd = -1;
+    for (var i = d.length - 22; i >= Math.max(0, d.length - 66000); i--) {
+      if (u32(d, i) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('Arquivo .xlsx inválido.');
+    var count = u16(d, eocd + 10), p = u32(d, eocd + 16), files = {};
+    var dec = new TextDecoder('utf-8');
+    for (var n = 0; n < count; n++) {
+      if (u32(d, p) !== 0x02014b50) break;
+      var method = u16(d, p + 10), csize = u32(d, p + 20);
+      var nlen = u16(d, p + 28), xlen = u16(d, p + 30), clen = u16(d, p + 32);
+      var loc = u32(d, p + 42);
+      var name = dec.decode(d.subarray(p + 46, p + 46 + nlen));
+      var dataStart = loc + 30 + u16(d, loc + 26) + u16(d, loc + 28);
+      files[name] = { method: method, data: d.subarray(dataStart, dataStart + csize) };
+      p += 46 + nlen + xlen + clen;
+    }
+    return files;
   }
 
+  function unzipText(entry) {
+    if (!entry) return Promise.resolve('');
+    if (entry.method === 0) return Promise.resolve(new TextDecoder('utf-8').decode(entry.data));
+    if (typeof DecompressionStream === 'undefined') {
+      return Promise.reject(new Error('Navegador sem suporte à leitura de .xlsx. Use Chrome/Edge atualizado ou salve como .csv.'));
+    }
+    var stream = new Blob([entry.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return new Response(stream).text();
+  }
+
+  function xmlDoc(text) { return new DOMParser().parseFromString(text, 'application/xml'); }
+  function byTag(node, tag) { return node.getElementsByTagNameNS('*', tag); }
+
+  function colToIndex(ref) {
+    var letters = (ref || '').replace(/[0-9]/g, ''), n = 0;
+    for (var i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64);
+    return n - 1;
+  }
+
+  function cellText(node) {
+    var ts = byTag(node, 't'), out = '';
+    for (var i = 0; i < ts.length; i++) out += ts[i].textContent;
+    return out;
+  }
+
+  function parseXLSX(file) {
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (ext === 'xls') {
+      setStatus('err', '⚠ Formato .xls antigo não suportado. Salve a planilha como .xlsx ou .csv.');
+      return;
+    }
+
+    file.arrayBuffer().then(function (buf) {
+      var files = readZip(buf);
+
+      /* Descobre o caminho da 1ª planilha pelo workbook */
+      return Promise.all([
+        unzipText(files['xl/workbook.xml']),
+        unzipText(files['xl/_rels/workbook.xml.rels']),
+        unzipText(files['xl/sharedStrings.xml'])
+      ]).then(function (r) {
+        var sheetPath = 'xl/worksheets/sheet1.xml';
+        try {
+          var firstSheet = byTag(xmlDoc(r[0]), 'sheet')[0];
+          var rid = firstSheet.getAttribute('r:id') || firstSheet.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id');
+          var rels = byTag(xmlDoc(r[1]), 'Relationship');
+          for (var i = 0; i < rels.length; i++) {
+            if (rels[i].getAttribute('Id') === rid) {
+              var t = rels[i].getAttribute('Target').replace(/^\//, '');
+              sheetPath = t.indexOf('xl/') === 0 ? t : 'xl/' + t;
+            }
+          }
+        } catch (e) { /* usa sheet1.xml */ }
+
+        var shared = [];
+        if (r[2]) {
+          var sis = byTag(xmlDoc(r[2]), 'si');
+          for (var j = 0; j < sis.length; j++) shared.push(cellText(sis[j]));
+        }
+
+        return unzipText(files[sheetPath]).then(function (sheetXml) {
+          var rowsXml = byTag(xmlDoc(sheetXml), 'row'), rows = [];
+          for (var a = 0; a < rowsXml.length; a++) {
+            var row = [], cells = byTag(rowsXml[a], 'c');
+            for (var b = 0; b < cells.length; b++) {
+              var c = cells[b], type = c.getAttribute('t'), idx = colToIndex(c.getAttribute('r'));
+              if (idx < 0) idx = row.length;
+              var v = byTag(c, 'v')[0], val = '';
+              if (type === 's') val = shared[parseInt(v ? v.textContent : '0', 10)] || '';
+              else if (type === 'inlineStr') val = cellText(c);
+              else if (v) val = v.textContent;
+              /* números com casas decimais longas (ex.: 0.30000000000000004) */
+              if (type !== 's' && type !== 'inlineStr' && type !== 'str' && val !== '' && !isNaN(val)) {
+                val = String(parseFloat(Number(val).toPrecision(12)));
+              }
+              while (row.length < idx) row.push('');
+              row[idx] = val;
+            }
+            rows.push(row);
+          }
+          processRows(rows, file.name);
+        });
+      });
+    }).catch(function (err) {
+      setStatus('err', '⚠ Erro ao ler a planilha: ' + err.message);
+    });
+  }
+
+  /* Leitor NATIVO de .csv (detecta ; ou , e respeita aspas) */
   function parseCSV(file) {
-    Papa.parse(file, {
-      skipEmptyLines: 'greedy',
-      complete: function (result) { processRows(result.data, file.name); },
-      error:    function (err)    { setStatus('err', '⚠ Erro ao ler o CSV: ' + err.message); }
+    file.text().then(function (text) {
+      text = text.replace(/^\uFEFF/, '');
+      var firstLine = text.split(/\r?\n/)[0] || '';
+      var sep = (firstLine.split(';').length >= firstLine.split(',').length) ? ';' : ',';
+      var rows = [], row = [], field = '', q = false;
+      for (var i = 0; i < text.length; i++) {
+        var ch = text[i];
+        if (q) {
+          if (ch === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else q = false; }
+          else field += ch;
+        } else if (ch === '"') q = true;
+        else if (ch === sep) { row.push(field); field = ''; }
+        else if (ch === '\n' || ch === '\r') {
+          if (ch === '\r' && text[i + 1] === '\n') i++;
+          row.push(field); field = '';
+          if (row.join('').trim() !== '') rows.push(row);
+          row = [];
+        } else field += ch;
+      }
+      row.push(field);
+      if (row.join('').trim() !== '') rows.push(row);
+      processRows(rows, file.name);
+    }).catch(function (err) {
+      setStatus('err', '⚠ Erro ao ler o CSV: ' + err.message);
     });
   }
 
@@ -569,172 +683,100 @@
      Se não encontrar, usa a posição padrão: A=FE, B=Referência, C=Composição.
      Agrupa as composições por FE + Referência, sem duplicatas.
      =================================================================== */
-  function normalize(value) {
-    return String(value == null ? '' : value)
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-  }
-
-  function colIdx(header, candidates) {
-    var normalized = candidates.map(normalize);
-    for (var i = 0; i < header.length; i++) {
-      if (normalized.indexOf(header[i]) > -1) return i;
-    }
-    return -1;
-  }
-
+  // A primeira linha nao vazia contem os titulos; as demais sao dados.
   function processRows(rows, filename) {
-    if (!rows || rows.length < 2) {
-      setStatus('err', '⚠ Arquivo sem dados.');
-      return;
-    }
-
-    var header = rows[0].map(normalize);
-
-    var iFE   = colIdx(header, ['fe', 'nfe', 'número fe', 'numero fe', 'product']);
-    var iRef  = colIdx(header, ['referência do cliente', 'referencia do cliente', 'ref cliente', 'referência', 'referencia', 'customer reference']);
-    var iComp = colIdx(header, ['composição', 'composicao', 'comp', 'composition']);
-
-    if (iFE   < 0) iFE   = 0;
-    if (iRef  < 0) iRef  = 1;
-    if (iComp < 0) iComp = 2;
-
-    var map      = [];
-    var keyIndex = Object.create(null);
-
-    rows.slice(1).forEach(function (row) {
-      var fe   = String(row[iFE]   == null ? '' : row[iFE]).trim();
-      var ref  = String(row[iRef]  == null ? '' : row[iRef]).trim();
-      var comp = String(row[iComp] == null ? '' : row[iComp]).trim();
-
-      if (!fe && !ref && !comp) return;
-
-      var key = fe + '|||' + ref;
-
-      if (keyIndex[key] === undefined) {
-        keyIndex[key] = map.length;
-        map.push({ fe: fe, ref: ref, comps: [] });
-      }
-
-      if (comp && map[keyIndex[key]].comps.indexOf(comp) === -1) {
-        map[keyIndex[key]].comps.push(comp);
-      }
+    var clean = (rows || []).filter(function (row) {
+      return Array.isArray(row) && row.some(function (v) {
+        return v != null && String(v).trim() !== '';
+      });
     });
-
-    if (!map.length) {
-      setStatus('err', '⚠ Nenhum dado encontrado.');
+    if (clean.length < 2) {
+      setStatus('err', 'O arquivo precisa conter uma linha de cabeçalhos e pelo menos uma linha de dados.');
       return;
     }
-
-    grouped = map;
-    renderPreview();
-
-    var total = map.reduce(function (sum, item) {
-      return sum + Math.max(item.comps.length, 1);
+    var count = clean.reduce(function (max, row) {
+      var last = row.length;
+      while (last > 0 && (row[last - 1] == null || String(row[last - 1]).trim() === '')) last--;
+      return Math.max(max, last);
     }, 0);
-
-    chipsEl.innerHTML =
-      '<span class="chip"><b>' + map.length + '</b>&nbsp;produto(s)</span>' +
-      '<span class="chip"><b>' + total + '</b>&nbsp;composição(ões)</span>';
-
-    setStatus('ok', '✓ ' + filename + ' carregado com sucesso.', 5000);
-
+    var headers = Array.from({ length: count }, function (_, i) {
+      return clean[0][i] == null ? '' : String(clean[0][i]);
+    });
+    if (headers.some(function (h) { return !h.trim(); })) {
+      setStatus('err', 'Há coluna com dados sem título. Preencha todos os cabeçalhos na primeira linha do arquivo.');
+      return;
+    }
+    columnHeaders = headers;
+    // Preserva todas as linhas, sem agrupamento por nomes ou posicoes fixas.
+    grouped = clean.slice(1).map(function (row) {
+      return columnHeaders.map(function (_, i) {
+        return row[i] == null ? '' : String(row[i]);
+      });
+    });
+    renderPreview();
+    chipsEl.textContent = grouped.length + ' linha(s) | ' + columnHeaders.length + ' coluna(s)';
+    setStatus('ok', filename + ' carregado com sucesso.', 5000);
     dz.classList.add('hidden');
     metaBar.classList.add('on');
     tblWrap.classList.add('on');
     actionRow.classList.add('on');
-
     resizeWidget();
   }
 
-  /* ===================================================================
-     ETAPA 16 — MONTAGEM DAS LINHAS DA TABELA
-     -------------------------------------------------------------------
-     Função reutilizada para a pré-visualização e para a tabela de
-     captura. Usa textContent (seguro contra injeção de HTML).
-     FE e Referência são mesclados (rowSpan) quando há várias composições.
-     =================================================================== */
-  function buildRows(targetTbody, useAltClass) {
-    targetTbody.innerHTML = '';
-    var groupIndex = 0;
-
-    grouped.forEach(function (item) {
-      var comps = item.comps.length ? item.comps : ['—'];
-
-      comps.forEach(function (comp, ci) {
-        var tr = document.createElement('tr');
-
-        if (ci === 0) {
-          tr.appendChild(makeTD(item.fe,  comps.length, 'col-fe'));
-          tr.appendChild(makeTD(item.ref, comps.length, 'col-ref'));
-        }
-
-        var cls = 'col-comp';
-        if (useAltClass && groupIndex % 2 === 1) cls += ' alt';
-
-        tr.appendChild(makeTD(comp, 1, cls));
-        targetTbody.appendChild(tr);
-      });
-
-      groupIndex++;
+  function buildHeader(targetHead) {
+    targetHead.innerHTML = '';
+    var tr = document.createElement('tr');
+    columnHeaders.forEach(function (title) {
+      var th = document.createElement('th');
+      th.scope = 'col';
+      th.textContent = title;
+      tr.appendChild(th);
     });
+    targetHead.appendChild(tr);
   }
 
-  function makeTD(text, span, cls) {
-    var td = document.createElement('td');
-    td.className   = cls;
-    td.textContent = text;
-    td.rowSpan     = span;
-    return td;
+  function buildRows(targetTbody, useAltClass) {
+    targetTbody.innerHTML = '';
+    var fragment = document.createDocumentFragment();
+    grouped.forEach(function (row, index) {
+      var tr = document.createElement('tr');
+      row.forEach(function (value) {
+        var td = document.createElement('td');
+        td.textContent = value;
+        if (useAltClass && index % 2 === 1) td.className = 'alt';
+        tr.appendChild(td);
+      });
+      fragment.appendChild(tr);
+    });
+    targetTbody.appendChild(fragment);
+  }
+
+  function tableWidth() {
+    return Math.max(900, columnHeaders.length * 150);
   }
 
   function renderPreview() {
+    buildHeader($('previewHead'));
+    var table = tbody.closest('table');
+    table.style.minWidth = tableWidth() + 'px';
     buildRows(tbody, false);
   }
 
-  /* ===================================================================
-     ETAPA 17 — CRIA A TABELA COMPLETA NO PALCO DE CAPTURA
-     -------------------------------------------------------------------
-     A tabela de pré-visualização tem rolagem (max-height), então não
-     serve para captura. Aqui montamos uma cópia completa, fora da tela.
-     =================================================================== */
   function buildCaptureTable() {
     captureStage.innerHTML = '';
-
     var table = document.createElement('table');
     table.className = 'capture-table';
-
+    table.style.width = tableWidth() + 'px';
     var thead = document.createElement('thead');
-    var trh   = document.createElement('tr');
-
-    ['FE / Product',
-     'Referência do Cliente / Customer Reference',
-     'Composição / Composition'
-    ].forEach(function (title) {
-      var th = document.createElement('th');
-      th.textContent = title;
-      trh.appendChild(th);
-    });
-
-    thead.appendChild(trh);
+    buildHeader(thead);
     table.appendChild(thead);
-
     var tb = document.createElement('tbody');
     buildRows(tb, true);
     table.appendChild(tb);
-
     captureStage.appendChild(table);
     return table;
   }
 
-  /* ===================================================================
-     ETAPA 18 — CONVERTE A TABELA EM PNG (html2canvas)
-     -------------------------------------------------------------------
-     Usa escala 2x para nitidez no PDF, reduzindo automaticamente se a
-     tabela for muito grande (limite de tamanho do canvas no navegador).
-     =================================================================== */
   function renderTableToCanvas(table) {
     var width  = Math.ceil(table.scrollWidth);
     var height = Math.ceil(table.scrollHeight);
@@ -752,6 +794,10 @@
       ));
     }
 
+    if (typeof html2canvas === 'undefined') {
+      return Promise.resolve(drawTableNative(table, scale));
+    }
+
     return html2canvas(table, {
       scale: scale,
       backgroundColor: '#ffffff',
@@ -762,6 +808,59 @@
       windowWidth: width,
       windowHeight: height
     });
+  }
+
+  /* Desenho NATIVO da tabela no canvas (usado se html2canvas for bloqueado) */
+  function drawTableNative(table, scale) {
+    var box = table.getBoundingClientRect();
+    var canvas = document.createElement('canvas');
+    canvas.width  = Math.ceil(box.width * scale);
+    canvas.height = Math.ceil(box.height * scale);
+    var ctx = canvas.getContext('2d');
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, box.width, box.height);
+
+    var cells = table.querySelectorAll('th, td');
+    for (var i = 0; i < cells.length; i++) {
+      var el = cells[i], r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      var x = r.left - box.left, y = r.top - box.top;
+      var bg = cs.backgroundColor;
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+        ctx.fillStyle = bg; ctx.fillRect(x, y, r.width, r.height);
+      }
+      ctx.strokeStyle = cs.borderTopColor || '#c8cdd8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, r.width - 1, r.height - 1);
+
+      ctx.fillStyle = cs.color || '#000';
+      ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      ctx.textBaseline = 'top';
+      var pl = parseFloat(cs.paddingLeft) || 6, pt = parseFloat(cs.paddingTop) || 4;
+      var pr = parseFloat(cs.paddingRight) || 6;
+      var lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.3;
+      var maxW = r.width - pl - pr;
+
+      /* quebra de linha por palavras */
+      var lines = [];
+      String(el.textContent).split('\n').forEach(function (para) {
+        var words = para.split(' '), line = '';
+        words.forEach(function (w) {
+          var test = line ? line + ' ' + w : w;
+          if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+          else line = test;
+        });
+        lines.push(line);
+      });
+      var textH = lines.length * lh;
+      var ty = (cs.verticalAlign === 'middle') ? y + (r.height - textH) / 2 : y + pt;
+      lines.forEach(function (ln, k) {
+        var tx = x + pl;
+        if (cs.textAlign === 'center') tx = x + (r.width - ctx.measureText(ln).width) / 2;
+        ctx.fillText(ln, tx, ty + k * lh);
+      });
+    }
+    return canvas;
   }
 
   /* Gera um nome de arquivo PNG seguro a partir do nome da planilha */
@@ -893,6 +992,8 @@
      =================================================================== */
   function resetWidget() {
     grouped      = [];
+    columnHeaders = [];
+    $('previewHead').innerHTML = '';
     currentValue = '';
     sourceName   = '';
     fileIn.value = '';
